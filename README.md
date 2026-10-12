@@ -46,3 +46,7 @@ The model is designed to be useful even without AI and, over time, interoperable
 **Local-first and privacy-conscious.** Home geometry, occupancy, and device data are sensitive. Cloud AI processing should be optional and explicit. **User-controlled and safe.** Recommendations should explain their reasoning; impactful actions require appropriate authorization. **Open and interoperable.** The spatial model should outlive any particular visualization, AI provider, or device ecosystem.
 
 *Spatial Home is a proposed product direction; the capabilities above describe its goals, not an already completed application.*
+
+## License
+
+Licensed under the [Apache License 2.0](LICENSE).

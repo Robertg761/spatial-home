@@ -1,0 +1,29 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # The ruleset on main requires this job to pass. Add new steps (tests,
+  # type checks, builds) here as the code arrives, so the required check
+  # name stays "ci".
+  ci:
+    name: ci
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Lint Markdown
+        uses: DavidAnson/markdownlint-cli2-action@v24
+        with:
+          globs: "**/*.md"

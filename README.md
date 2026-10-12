@@ -10,7 +10,7 @@ The goal is to make the home more than a collection of devices: a context-aware 
 
 ## The experience
 
-1. **Capture your home in minutes.** Scan rooms with a compatible iPhone using Apple RoomPlan, or draw and edit a floor plan manually. The ambition is a useful first model in roughly three minutes for a suitable room—not a guaranteed whole-house scan.
+1. **Capture your home in minutes.** Scan rooms with an Android phone or an iPhone, or draw and edit a floor plan by hand. On Android, scanning uses ARCore depth, which works on many phones that have no dedicated depth sensor. On iPhones and iPads with LiDAR, it uses Apple RoomPlan. Both produce the same home model and open in the same editor. Android has no built-in equivalent of RoomPlan's automatic wall, door and furniture labelling, so an Android scan will need more correction in the editor at first. The ambition is a useful first model in roughly three minutes for a suitable room, not a guaranteed whole-house scan.
 2. **Make it recognizable.** Automatically generate a clean 3D layout, with optional AI-assisted visual enhancements. Verified measurements and spatial relationships remain separate from generated appearance.
 3. **Connect your devices.** Discover appliances and sensors through Home Assistant, suggest their locations, and let the user confirm or correct matches in a few taps.
 4. **Interact naturally.** Explore the home, view device information, control supported appliances, and ask questions that require an understanding of physical space.
@@ -27,6 +27,7 @@ The goal is to make the home more than a collection of devices: a context-aware 
 Spatial Home is **not a replacement for Home Assistant**. Home Assistant remains responsible for device connectivity, live state, and authorized control. Spatial Home adds:
 
 - A **portable, versioned home model** describing rooms, floors, doors, windows, fixtures, device positions, orientations, and relationships.
+- **Phone scanning on Android and iOS** that turns a room scan into a draft floor plan.
 - A **2D/3D editor** for creating, reviewing, and correcting that model.
 - A **spatial reasoning service** that calculates distances, room connectivity, routes, sunlight exposure, and sensor coverage.
 - **APIs and MCP tools** that let AI agents ask spatial questions and combine the answers with Home Assistant's existing capabilities.
@@ -37,13 +38,13 @@ The model is designed to be useful even without AI and, over time, interoperable
 
 **First:** Deliver a reliable floor-plan editor, simple 3D model, Home Assistant entity placement, and a working spatial-query demonstration.
 
-**Next:** Streamline RoomPlan import, device matching, live visualization, and optional higher-fidelity rendering.
+**Next:** Streamline phone-scan import on both Android and iOS, device matching, live visualization, and optional higher-fidelity rendering.
 
 **Later:** Add proactive, explainable AI recommendations, more advanced automations, and carefully permissioned integrations with physical robots.
 
 ## Principles
 
-**Local-first and privacy-conscious.** Home geometry, occupancy, and device data are sensitive. Cloud AI processing should be optional and explicit. **User-controlled and safe.** Recommendations should explain their reasoning; impactful actions require appropriate authorization. **Open and interoperable.** The spatial model should outlive any particular visualization, AI provider, or device ecosystem.
+**Local-first and privacy-conscious.** Home geometry, occupancy, and device data are sensitive. Cloud AI processing should be optional and explicit. **Android and iPhone alike.** Every feature should work on Android as well as on iPhone. Where one platform can't do something on its own, such as automatic room labelling, the app fills the gap rather than dropping the feature. **User-controlled and safe.** Recommendations should explain their reasoning; impactful actions require appropriate authorization. **Open and interoperable.** The spatial model should outlive any particular visualization, AI provider, or device ecosystem.
 
 *Spatial Home is a proposed product direction; the capabilities above describe its goals, not an already completed application.*
 

@@ -1,0 +1,25 @@
+# Dependencies
+node_modules/
+.venv/
+venv/
+__pycache__/
+
+# Build output
+dist/
+build/
+*.egg-info/
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+
+# Local home data (layouts can reveal a real home's geometry)
+home-layout.local.json
+*.usdz
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+*.swp

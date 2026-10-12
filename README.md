@@ -1,0 +1,48 @@
+# Spatial Home
+
+**An interactive digital twin that gives smart homes—and eventually robots—an understanding of physical space.**
+
+## Vision
+
+Smart-home platforms know *which* devices exist and *what* they do, but often lack a useful model of *where* those devices are and *how* the home fits together. Spatial Home aims to close that gap: turn a real home into a navigable 3D environment with a structured spatial model that people, automations, and AI agents can understand.
+
+The goal is to make the home more than a collection of devices: a context-aware environment that can explain, recommend, and—with permission—act.
+
+## The experience
+
+1. **Capture your home in minutes.** Scan rooms with a compatible iPhone using Apple RoomPlan, or draw and edit a floor plan manually. The ambition is a useful first model in roughly three minutes for a suitable room—not a guaranteed whole-house scan.
+2. **Make it recognizable.** Automatically generate a clean 3D layout, with optional AI-assisted visual enhancements. Verified measurements and spatial relationships remain separate from generated appearance.
+3. **Connect your devices.** Discover appliances and sensors through Home Assistant, suggest their locations, and let the user confirm or correct matches in a few taps.
+4. **Interact naturally.** Explore the home, view device information, control supported appliances, and ask questions that require an understanding of physical space.
+
+## What spatial intelligence enables
+
+- **Better automations:** Light the route from a bedroom to a bathroom at night, rather than switching on an entire floor.
+- **Environmental awareness:** Use window orientation, sun position, weather, and sensor readings to recommend blind settings or a better location for a plant.
+- **Contextual assistance:** Identify the lamp closest to a reading chair, explain sensor blind spots, or suggest improvements from recurring household patterns.
+- **Future robotics:** As physical AI matures, share the home's spatial model with compatible robots for task planning and navigation context. Robots will still need their own localization, sensing, obstacle avoidance, and safety systems.
+
+## How it works
+
+Spatial Home is **not a replacement for Home Assistant**. Home Assistant remains responsible for device connectivity, live state, and authorized control. Spatial Home adds:
+
+- A **portable, versioned home model** describing rooms, floors, doors, windows, fixtures, device positions, orientations, and relationships.
+- A **2D/3D editor** for creating, reviewing, and correcting that model.
+- A **spatial reasoning service** that calculates distances, room connectivity, routes, sunlight exposure, and sensor coverage.
+- **APIs and MCP tools** that let AI agents ask spatial questions and combine the answers with Home Assistant's existing capabilities.
+
+The model is designed to be useful even without AI and, over time, interoperable with multiple interfaces and robotic systems.
+
+## Development direction
+
+**First:** Deliver a reliable floor-plan editor, simple 3D model, Home Assistant entity placement, and a working spatial-query demonstration.
+
+**Next:** Streamline RoomPlan import, device matching, live visualization, and optional higher-fidelity rendering.
+
+**Later:** Add proactive, explainable AI recommendations, more advanced automations, and carefully permissioned integrations with physical robots.
+
+## Principles
+
+**Local-first and privacy-conscious.** Home geometry, occupancy, and device data are sensitive. Cloud AI processing should be optional and explicit. **User-controlled and safe.** Recommendations should explain their reasoning; impactful actions require appropriate authorization. **Open and interoperable.** The spatial model should outlive any particular visualization, AI provider, or device ecosystem.
+
+*Spatial Home is a proposed product direction; the capabilities above describe its goals, not an already completed application.*

@@ -62,7 +62,7 @@ The first version is a standalone web app that connects to Home Assistant. It's 
 
 **Out, for now:**
 
-- Scanning with a phone (LiDAR)
+- Scanning with a phone, on Android or iPhone
 - Photo-realistic 3D or photo scans
 - Running inside Home Assistant as an integration
 - Live device states shown on the 3D model
@@ -74,10 +74,11 @@ Each phase works on its own before the next one starts.
 1. **Editor.** Draw rooms, doors and windows, and see the home in 3D.
 2. **Devices.** Connect to Home Assistant, place devices, and link rooms to areas.
 3. **Agent tools.** Build the MCP server and test it on real requests, such as night lighting and sun-aware blinds.
-4. **Scanning.** Import iPhone LiDAR scans (Apple RoomPlan), which arrive with walls, doors, windows and furniture already labelled.
+4. **Scanning.** Scan rooms with a phone on Android and iPhone. Android scans use ARCore depth, which works on many phones without a depth sensor. ARCore gives us depth and flat surfaces but doesn't say which is a wall, a door or a couch, so we have to work that out ourselves. iPhone and iPad scans with LiDAR use Apple RoomPlan, which arrives with walls, doors, windows and furniture already labelled. Both end up in the same `home-layout.json`, and Android has to be as usable as iPhone before this phase is done.
 5. **Home Assistant integration.** Package it as an integration with its own sidebar panel, so the layout lives inside Home Assistant.
 
 ## Open questions
 
 - How precise do positions need to be? Room-level accuracy may be enough for most automations.
 - How do we handle homes with several floors and stairs in the route-finding?
+- How do we turn an Android scan into labelled walls, doors and windows? We could build our own detection on ARCore's depth data, use a third-party scanning SDK, or ask the user to tap and label each one.

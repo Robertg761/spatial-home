@@ -307,12 +307,65 @@ test('uses a measured ceiling height', () => {
 });
 
 describe('imperfect scans', () => {
+  test('fits openings at a wall end once they are rounded to centimetres', () => {
+    // Half of 0.807 m rounds down while 0.807 m rounds up, and the slanted wall is 3.178 m long.
+    const slanted: Point2[] = [
+      [0, 0],
+      [3, 1.05],
+      [3, 4],
+      [0, 4],
+    ];
+    const opening = (center: Point2, width: number) => ({
+      kind: 'opening' as const,
+      center: toWorld(center, 1, 0),
+      width,
+      height: 2,
+    });
+    const result = imported(
+      importScan(
+        session([
+          {
+            name: 'Study',
+            outline: slanted.map((point) => toWorld(point, 0, 0)),
+            openings: [
+              opening([3, 1.1], 0.807),
+              opening([3, 3.95], 0.807),
+              opening([1.5, 0.525], 3.5),
+            ],
+          },
+        ]),
+        { alignToWalls: false }
+      )
+    );
+    expect(result.layout.openings).toHaveLength(3);
+    expect(result.validation.ok && result.validation.warnings).toEqual([]);
+  });
+
   test('leaves out a stray wall piece that is not part of the outline', () => {
     const walls = wallsAround(bedroom, 2.4, 0);
     // A short freestanding wall in the middle of the room.
     walls.push({ start: toWorld([2, 1], 0, 0), end: toWorld([2, 2], 0, 0), height: 1 });
     const result = imported(importScan(session([{ name: 'Study', walls }])));
     expectOutline(result.layout.rooms[0]!.outline, bedroom);
+    expect(result.notes.map((note) => note.message)).toEqual(
+      expect.arrayContaining([expect.stringContaining('left out 1 wall piece')])
+    );
+  });
+
+  test('finds the loop when a stray wall piece starts nearer a corner than the next wall', () => {
+    const l: Point2[] = [
+      [0, 0],
+      [5, 0],
+      [5, 2],
+      [2.5, 2],
+      [2.5, 4],
+      [0, 4],
+    ];
+    const walls = wallsAround(l, 2.4, 0);
+    // A short piece standing out from the far corner, starting right at it.
+    walls.push({ start: toWorld([5, 0], 0, 0), end: toWorld([4.4, 0.6], 0, 0), height: 1 });
+    const result = imported(importScan(session([{ name: 'Kitchen', walls }])));
+    expectOutline(result.layout.rooms[0]!.outline, l, 0.05);
     expect(result.notes.map((note) => note.message)).toEqual(
       expect.arrayContaining([expect.stringContaining('left out 1 wall piece')])
     );

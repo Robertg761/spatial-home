@@ -185,8 +185,15 @@ function buildLayout(session: ScanSession, options: ImportOptions): ImportResult
         });
         return;
       }
-      const width = Math.min(scanned.width, hit.length);
-      const offset = round(clamp(hit.offset, width / 2, hit.length - width / 2));
+      // Width and offset are rounded as they will be written out, so the opening still fits the
+      // wall as validation measures it (the outline is already rounded). An opening as wide as
+      // the wall is narrowed to an even number of centimetres so that it can be centred.
+      const width = Math.min(round(scanned.width), round(2 * round(hit.length / 2, 0.01, 'down')));
+      const offset = clamp(
+        round(hit.offset),
+        round(width / 2, 0.01, 'up'),
+        round(hit.length - width / 2, 0.01, 'down')
+      );
       const bottom = scanned.center[1] - scanned.height / 2 - room.floorHeight;
       const base = {
         id: claimId(
@@ -195,7 +202,7 @@ function buildLayout(session: ScanSession, options: ImportOptions): ImportResult
         ),
         wall: { roomId, index: hit.index },
         offset,
-        width: round(width),
+        width,
         height: round(scanned.height),
         connects: 'outside',
       };
@@ -307,9 +314,9 @@ interface Segment {
 }
 
 /**
- * Chains a room's walls into a closed outline: each wall joins the one whose end is nearest its
- * own, and each corner is where the two walls' lines meet, since scanned walls rarely end exactly
- * at a corner.
+ * Chains a room's walls into a closed outline: each wall joins one whose end is near its own,
+ * and each corner is where the two walls' lines meet, since scanned walls rarely end exactly at a
+ * corner.
  */
 function outlineFromWalls(
   scan: RoomScan,
@@ -339,31 +346,45 @@ function outlineFromWalls(
   });
 }
 
+/** How many steps the search for a wall loop may take from each starting wall. */
+const CHAIN_STEPS = 2000;
+
 function chain(segments: Segment[], tolerance: number): Segment[] | null {
-  // Try each wall as the start, keeping the longest closed loop found.
-  let best: Segment[] | null = null;
-  for (let start = 0; start < segments.length; start++) {
-    const used = new Set([start]);
-    const loop: Segment[] = [segments[start]!];
-    for (;;) {
-      const end = loop.at(-1)!.b;
-      let next: { index: number; flip: boolean; gap: number } | null = null;
-      segments.forEach((segment, index) => {
-        if (used.has(index)) return;
+  // Try each wall as the start, keeping the longest closed loop found. From each wall end, try
+  // the walls within reach nearest first, and back up when that leads nowhere, such as into a
+  // stray piece that starts at a corner. The nearest-first path is always tried in full.
+  let best = null as Segment[] | null; // Not `: Segment[] | null = null`, which stays null to tsc.
+  const used = new Set<number>();
+  let steps = 0;
+  const extend = (loop: Segment[]) => {
+    if (steps++ > CHAIN_STEPS) return;
+    const end = loop.at(-1)!.b;
+    const closed = loop.length >= 3 && distance(end, loop[0]!.a) <= tolerance;
+    if (closed && (!best || loop.length > best.length)) best = [...loop];
+    const next = segments
+      .map((segment, index) => {
         const gapA = distance(end, segment.a);
         const gapB = distance(end, segment.b);
-        const gap = Math.min(gapA, gapB);
-        if (gap <= tolerance && (!next || gap < next.gap)) next = { index, flip: gapB < gapA, gap };
-      });
-      const found = next as { index: number; flip: boolean; gap: number } | null;
-      if (!found) break;
-      used.add(found.index);
-      const segment = segments[found.index]!;
-      loop.push(found.flip ? { a: segment.b, b: segment.a } : segment);
+        return { index, flip: gapB < gapA, gap: Math.min(gapA, gapB) };
+      })
+      .filter(({ index, gap }) => !used.has(index) && gap <= tolerance)
+      .sort((a, b) => a.gap - b.gap);
+    for (const { index, flip } of next) {
+      if (best?.length === segments.length) return;
+      const segment = segments[index]!;
+      used.add(index);
+      loop.push(flip ? { a: segment.b, b: segment.a } : segment);
+      extend(loop);
+      loop.pop();
+      used.delete(index);
     }
-    const closed = loop.length >= 3 && distance(loop.at(-1)!.b, loop[0]!.a) <= tolerance;
-    if (closed && (!best || loop.length > best.length)) best = loop;
+  };
+  for (let start = 0; start < segments.length; start++) {
     if (best?.length === segments.length) break;
+    steps = 0;
+    used.add(start);
+    extend([segments[start]!]);
+    used.delete(start);
   }
   return best;
 }
@@ -561,8 +582,20 @@ function clamp(value: number, min: number, max: number): number {
 }
 
 /** Rounds to the nearest centimetre, or another step; scans are no more precise than that. */
-function round(value: number, step = 0.01): number {
-  return Number((Math.round(value / step) * step).toFixed(4)) + 0;
+function round(
+  value: number,
+  step = 0.01,
+  direction: 'nearest' | 'down' | 'up' = 'nearest'
+): number {
+  const steps = value / step;
+  // Down and up allow for floating-point error, so 0.29 / 0.01 still counts as 29 steps.
+  const whole =
+    direction === 'down'
+      ? Math.floor(steps + 1e-6)
+      : direction === 'up'
+        ? Math.ceil(steps - 1e-6)
+        : Math.round(steps);
+  return Number((whole * step).toFixed(4)) + 0;
 }
 
 function normalizeDegrees(degrees: number): number {

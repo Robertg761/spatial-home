@@ -172,10 +172,13 @@ export function addOpening(layout: HomeLayout, kind: OpeningKind, hit: WallHit):
   return { layout: { ...layout, openings: [...layout.openings, opening] }, id };
 }
 
-/** Moves a room, with the fixtures and devices in it. Openings move with their walls. */
+/**
+ * Moves a room, with the fixtures and devices in it. Openings move with their walls, and lead to
+ * whatever is now behind them.
+ */
 export function moveRoom(layout: HomeLayout, roomId: string, dx: number, dy: number): HomeLayout {
   const shift = ([x, y]: Point2): Point2 => [roundTo(x + dx), roundTo(y + dy)];
-  return {
+  return reconnectOpenings(layout, {
     ...layout,
     rooms: layout.rooms.map((room) =>
       room.id === roomId ? { ...room, outline: room.outline.map(shift) } : room
@@ -189,7 +192,7 @@ export function moveRoom(layout: HomeLayout, roomId: string, dx: number, dy: num
       const [nx, ny] = shift([x, y]);
       return { ...device, position: [nx, ny, z] };
     }),
-  };
+  });
 }
 
 export function moveCorner(
@@ -198,9 +201,30 @@ export function moveCorner(
   index: number,
   point: Point2
 ): HomeLayout {
-  return updateRoom(layout, roomId, {
-    outline: findRoom(layout, roomId).outline.map((corner, i) => (i === index ? point : corner)),
-  });
+  return reconnectOpenings(
+    layout,
+    updateRoom(layout, roomId, {
+      outline: findRoom(layout, roomId).outline.map((corner, i) => (i === index ? point : corner)),
+    })
+  );
+}
+
+/**
+ * Points openings at whatever is behind them now that walls have moved. An opening that led
+ * somewhere other than what was behind it before was set by hand, so it is left alone.
+ */
+function reconnectOpenings(before: HomeLayout, after: HomeLayout): HomeLayout {
+  const rooms = new Set(after.rooms.map((room) => room.id));
+  return {
+    ...after,
+    openings: after.openings.map((opening) => {
+      const { roomId, index } = opening.wall;
+      if (!rooms.has(roomId)) return opening;
+      if (opening.connects !== roomAcross(before, roomId, index, opening.offset)) return opening;
+      const connects = roomAcross(after, roomId, index, opening.offset);
+      return connects === opening.connects ? opening : { ...opening, connects };
+    }),
+  };
 }
 
 export function updateRoom(

@@ -129,6 +129,31 @@ describe('editing', () => {
     ]);
   });
 
+  test('moving a room updates where the openings on and into it lead', () => {
+    const layout = sampleFlat();
+    const leadsTo = (l: HomeLayout, id: string) => l.openings.find((o) => o.id === id)!.connects;
+    const away = moveRoom(layout, 'living-room', -10, 0);
+    expect(leadsTo(away, 'living-room-door')).toBe(OUTSIDE);
+    expect(leadsTo(away, 'kitchen-arch')).toBe(OUTSIDE);
+    expect(leadsTo(away, 'living-room-window')).toBe(OUTSIDE);
+    // Moved back against the hallway and kitchen, the doors lead to it again.
+    const back = moveRoom(away, 'living-room', 10, 0);
+    expect(leadsTo(back, 'living-room-door')).toBe('living-room');
+    expect(leadsTo(back, 'kitchen-arch')).toBe('kitchen');
+  });
+
+  test('moving a room keeps a destination set by hand', () => {
+    const layout = updateOpening(sampleFlat(), 'living-room-window', { connects: 'kitchen' });
+    const moved = moveRoom(layout, 'living-room', -10, 0);
+    expect(moved.openings.find((o) => o.id === 'living-room-window')!.connects).toBe('kitchen');
+  });
+
+  test('moving a corner updates where the openings lead', () => {
+    // Pulls the living room's north-east corner down, away from the kitchen.
+    const moved = moveCorner(sampleFlat(), 'living-room', 2, [5, 1]);
+    expect(moved.openings.find((o) => o.id === 'kitchen-arch')!.connects).toBe(OUTSIDE);
+  });
+
   test('switching an opening to a window adds a sill, and back removes it', () => {
     const layout = sampleFlat();
     const asWindow = updateOpening(layout, 'kitchen-door', { kind: 'window' });

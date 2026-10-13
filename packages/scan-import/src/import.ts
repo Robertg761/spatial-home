@@ -153,14 +153,30 @@ function buildLayout(session: ScanSession, options: ImportOptions): ImportResult
     });
   }
 
-  // 5. Openings, each on the nearest wall of its room.
+  // 5. Openings, each on the wall the scanner says it is in, or else the nearest wall of its room.
   const openings: Opening[] = [];
   for (const room of planned) {
     const roomId = roomIdByIndex.get(room.index)!;
     const target = rooms.find((candidate) => candidate.id === roomId)!;
     room.scan.openings.forEach((scanned, openingIndex) => {
       const center = place(toPlan(scanned.center));
-      const hit = nearestWallOf(target, center);
+      // A named scanned wall is found in the outline by its middle, which is on no other wall.
+      const named =
+        scanned.wallId === undefined
+          ? undefined
+          : room.scan.walls.find((wall) => wall.id === scanned.wallId);
+      const along =
+        named &&
+        nearestWallOf(target, midpoint(place(toPlan(named.start)), place(toPlan(named.end))));
+      const onNamed = along && along.distance <= OPENING_REACH ? along : undefined;
+      if (scanned.wallId !== undefined && !onNamed) {
+        notes.push({
+          severity: 'info',
+          message: `${target.name}: a ${scanned.kind} is in wall "${scanned.wallId}", which isn't one of the room's walls, so it goes on the nearest wall.`,
+          room: room.index,
+        });
+      }
+      const hit = nearestWallOf(target, center, onNamed?.index);
       if (!hit || hit.distance > OPENING_REACH) {
         notes.push({
           severity: 'warning',
@@ -217,10 +233,11 @@ function buildLayout(session: ScanSession, options: ImportOptions): ImportResult
     });
   }
 
-  // 7. Furniture, in whichever room its centre is in.
+  // 7. Furniture, in whichever room on its floor its centre is in.
   const fixtures: Fixture[] = [];
   const fixtureNames = new Map<string, number>();
   for (const room of planned) {
+    const floorId = floors.idFor(room.floorHeight);
     for (const object of room.scan.objects) {
       const kind = slug(object.category).slice(0, 50) || 'object';
       if (kind === 'stairs') {
@@ -233,8 +250,10 @@ function buildLayout(session: ScanSession, options: ImportOptions): ImportResult
       }
       const position = place(toPlan(object.center));
       const home =
-        rooms.find((candidate) => pointInPolygon(position, candidate.outline)) ??
-        rooms.find((candidate) => candidate.id === roomIdByIndex.get(room.index));
+        rooms.find(
+          (candidate) =>
+            candidate.floorId === floorId && pointInPolygon(position, candidate.outline)
+        ) ?? rooms.find((candidate) => candidate.id === roomIdByIndex.get(room.index));
       if (!home) continue;
       const [width, height, depth] = object.size;
       const label = capitalize(object.category.replace(/([a-z])([A-Z])/g, '$1 $2').toLowerCase());
@@ -410,8 +429,9 @@ function groupStoreys(heights: number[]): { list: Floor[]; idFor: (height: numbe
   const sorted = [...new Set(heights.map((height) => round(height)))].sort((a, b) => a - b);
   const groups: number[][] = [];
   for (const height of sorted) {
+    // Measured from the storey's lowest floor, so a run of small steps can't climb a whole storey.
     const last = groups.at(-1);
-    if (last && height - last.at(-1)! <= STOREY_GAP) last.push(height);
+    if (last && height - last[0]! <= STOREY_GAP) last.push(height);
     else groups.push([height]);
   }
   const base = groups[0]?.[0] ?? 0;
@@ -443,13 +463,15 @@ function rotation(angle: number): (point: Point2) => Point2 {
   return ([x, y]) => [x * c - y * s, x * s + y * c];
 }
 
+/** The room's wall nearest the point, or only the wall at `only` when given. */
 function nearestWallOf(
   room: Room,
-  point: Point2
+  point: Point2,
+  only?: number
 ): { index: number; offset: number; length: number; distance: number } | null {
   let best: { index: number; offset: number; length: number; distance: number } | null = null;
   for (const wall of roomWalls(room)) {
-    if (wall.length === 0) continue;
+    if (wall.length === 0 || (only !== undefined && wall.index !== only)) continue;
     const t = clamp(
       ((point[0] - wall.start[0]) * (wall.end[0] - wall.start[0]) +
         (point[1] - wall.start[1]) * (wall.end[1] - wall.start[1])) /
@@ -495,6 +517,10 @@ function convexHull(points: Point2[]): Point2[] {
 
 function distance([x1, y1]: Point2, [x2, y2]: Point2): number {
   return Math.hypot(x2 - x1, y2 - y1);
+}
+
+function midpoint([x1, y1]: Point2, [x2, y2]: Point2): Point2 {
+  return [(x1 + x2) / 2, (y1 + y2) / 2];
 }
 
 function distanceToLine(point: Point2, a: Point2, b: Point2): number {

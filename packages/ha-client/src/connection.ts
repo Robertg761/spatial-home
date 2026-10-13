@@ -185,6 +185,11 @@ export class HomeAssistantConnection {
   #healthTimer: ReturnType<typeof setTimeout> | null = null;
   #heartbeatId: number | null = null;
   #reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  /**
+   * Bumped by every connect and close. State listeners run synchronously and may call connect()
+   * or close() themselves, so code that notifies them checks this before carrying on.
+   */
+  #generation = 0;
 
   #state: ConnectionState = {
     status: 'idle',
@@ -265,6 +270,7 @@ export class HomeAssistantConnection {
 
   /** Closes the connection and stops reconnecting. */
   close(): void {
+    this.#generation += 1;
     this.#clearReconnectTimer();
     const socket = this.#socket;
     if (socket) {
@@ -369,6 +375,7 @@ export class HomeAssistantConnection {
   // --- Socket lifecycle ---
 
   #openSocket(): void {
+    const generation = ++this.#generation;
     const previous = this.#socket;
     if (previous) {
       this.#teardown(previous, new HomeAssistantError('Connection replaced', 'connection_lost'));
@@ -379,6 +386,8 @@ export class HomeAssistantConnection {
       haVersion: null,
       nextRetryAt: null,
     });
+    // A listener closed or reconnected in response.
+    if (this.#generation !== generation) return;
 
     let socket: WebSocketLike;
     try {
@@ -627,6 +636,8 @@ export class HomeAssistantConnection {
     this.#authenticated = true;
     this.#scheduleHeartbeat(socket);
     this.#setState({ status: 'syncing', haVersion, reason: null, error: null });
+    // A listener closed or replaced the connection in response.
+    if (this.#socket !== socket) return;
 
     // Lets Home Assistant batch messages into one frame, as its own frontend does. Sent first so it
     // applies to the subscriptions below. Servers that predate it answer with an error, ignored.

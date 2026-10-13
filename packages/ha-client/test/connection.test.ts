@@ -530,6 +530,53 @@ describe('startup tasks', () => {
 });
 
 describe('state changes', () => {
+  test('a listener that closes on connecting stops the socket from opening', async () => {
+    const connection = createConnection();
+    connection.onStateChange((state) => {
+      if (state.status === 'connecting') connection.close();
+    });
+    connection.connect();
+    expect(connection.status).toBe('closed');
+    expect(FakeSocket.instances).toHaveLength(0);
+  });
+
+  test('a listener that reconnects on connecting leaves one socket', async () => {
+    const connection = createConnection();
+    let reconnected = false;
+    connection.onStateChange((state) => {
+      if (state.status === 'connecting' && !reconnected) {
+        reconnected = true;
+        connection.connect();
+      }
+    });
+    connection.connect();
+    expect(FakeSocket.instances).toHaveLength(1);
+    await FakeSocket.latest.acceptAuth();
+    await flush();
+    expect(connection.status).toBe('connected');
+    connection.close();
+  });
+
+  test('a listener that closes on syncing stops startup cleanly', async () => {
+    const errors: unknown[] = [];
+    const connection = createConnection({
+      logger: { ...silentLogger, error: (...args: unknown[]) => errors.push(args) },
+    });
+    let taskRuns = 0;
+    connection.addStartupTask(async () => {
+      taskRuns += 1;
+    });
+    connection.onStateChange((state) => {
+      if (state.status === 'syncing') connection.close();
+    });
+    connection.connect();
+    await FakeSocket.latest.acceptAuth();
+    await flush();
+    expect(connection.status).toBe('closed');
+    expect(taskRuns).toBe(0);
+    expect(errors).toEqual([]);
+  });
+
   test('are reported in order', async () => {
     const connection = createConnection();
     const statuses: string[] = [];

@@ -574,6 +574,66 @@ describe('startup tasks', () => {
     connection.close();
   });
 
+  test('an abort handler that closes the connection stops reconnection', async () => {
+    const connection = createConnection();
+    connection.addStartupTask((signal) => {
+      signal.addEventListener('abort', () => connection.close());
+      return new Promise(() => {});
+    });
+    connection.connect();
+    await FakeSocket.latest.acceptAuth();
+    FakeSocket.latest.drop();
+    expect(connection.status).toBe('closed');
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(FakeSocket.instances).toHaveLength(1);
+  });
+
+  test('an abort handler that closes on a rejected token leaves the connection closed', async () => {
+    const connection = createConnection();
+    connection.addStartupTask((signal) => {
+      signal.addEventListener('abort', () => connection.close());
+      return new Promise(() => {});
+    });
+    connection.connect();
+    await FakeSocket.latest.acceptAuth();
+    // A token revoked while connected is reported the same way.
+    FakeSocket.latest.receive({ type: 'auth_invalid', message: 'revoked' });
+    expect(connection.status).toBe('closed');
+  });
+
+  test('an abort handler that closes while the socket is replaced stops the replacement', async () => {
+    const connection = createConnection();
+    connection.addStartupTask((signal) => {
+      signal.addEventListener('abort', () => connection.close());
+      return new Promise(() => {});
+    });
+    connection.connect();
+    await FakeSocket.latest.acceptAuth();
+    connection.connect();
+    expect(connection.status).toBe('closed');
+    expect(FakeSocket.instances).toHaveLength(1);
+  });
+
+  test('an abort handler that reconnects during close() wins', async () => {
+    const connection = createConnection();
+    let reconnected = false;
+    connection.addStartupTask((signal) => {
+      signal.addEventListener('abort', () => {
+        if (reconnected) return;
+        reconnected = true;
+        connection.connect();
+      });
+      return new Promise(() => {});
+    });
+    connection.connect();
+    await FakeSocket.latest.acceptAuth();
+    connection.close();
+    expect(connection.status).toBe('connecting');
+    expect(FakeSocket.instances).toHaveLength(2);
+    expect(FakeSocket.latest.closed).toBe(false);
+    connection.close();
+  });
+
   test('receive a signal that aborts when the socket goes away', async () => {
     const connection = createConnection();
     let signal!: AbortSignal;

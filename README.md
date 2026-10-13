@@ -48,18 +48,38 @@ The model is designed to be useful even without AI and, over time, interoperable
 
 *Spatial Home is a proposed product direction; the capabilities above describe its goals, not an already completed application.*
 
+## Repository layout
+
+One TypeScript monorepo using npm workspaces. Apps are what people run; packages are code the apps share, so the web editor and the phone apps never carry two copies of the same logic.
+
+| Path | What it is | Built with |
+| --- | --- | --- |
+| [`apps/editor`](apps/editor) | Web editor: draw the floor plan, see it in 3D, place Home Assistant devices | React, Vite |
+| [`apps/mobile`](apps/mobile) | iOS and Android app: scan rooms into the same home model | React Native, Expo |
+| [`packages/ha-client`](packages/ha-client) | Connection to Home Assistant: live states, registries, service calls | TypeScript, no dependencies |
+| [`scripts`](scripts) | Developer tools, such as `ha-check` | Node |
+
+Planned, and added when their phase starts:
+
+- `packages/home-model`: the `home-layout.json` format, with validation, that every app reads and writes.
+- `apps/server`: the spatial reasoning service and MCP server for AI agents.
+
+Shared packages ship TypeScript source rather than build output. Vite, Metro (the bundler behind Expo) and Node 22.18+ all run it directly, so a change in a package shows up in the apps immediately. The editor and the phone app use the same React version, so the workspace holds one copy of React.
+
 ## Development
 
-The code is TypeScript in npm workspaces under `packages/`. It needs Node 22.18 or later, which runs TypeScript directly, so there is no build step yet.
-
-- [`packages/ha-client`](packages/ha-client): the Home Assistant WebSocket client that the editor and the spatial server share.
+Requires Node 22.18 or later.
 
 ```sh
 npm install
+npm run editor       # web editor at http://localhost:5173
+npm run mobile       # Expo dev server; open the app with Expo Go or a development build
 npm test             # unit tests
-npm run typecheck
+npm run typecheck    # every workspace
 npm run ha:check     # connect to your own Home Assistant (see .env.example)
 ```
+
+In `apps/mobile`, add dependencies with `npx expo install <package>` rather than `npm install`, so they match the Expo SDK.
 
 ## License
 

@@ -23,3 +23,6 @@ home-layout.local.json
 .idea/
 .DS_Store
 *.swp
+
+# Expo
+.expo/

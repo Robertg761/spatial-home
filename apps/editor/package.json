@@ -1,0 +1,26 @@
+{
+  "name": "@spatial-home/editor",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Spatial Home's web editor: draw the floor plan, see it in 3D, and place Home Assistant devices",
+  "license": "Apache-2.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@spatial-home/ha-client": "*",
+    "react": "19.2.3",
+    "react-dom": "19.2.3"
+  },
+  "devDependencies": {
+    "@types/react": "~19.2.2",
+    "@types/react-dom": "~19.2.2",
+    "@vitejs/plugin-react": "^6.0.0",
+    "typescript": "~6.0.3",
+    "vite": "^8.0.0"
+  }
+}

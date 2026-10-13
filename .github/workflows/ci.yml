@@ -39,6 +39,9 @@ jobs:
       - name: Test
         run: npm test
 
+      - name: Build the editor
+        run: npm run build
+
       - name: Lint Markdown
         uses: DavidAnson/markdownlint-cli2-action@v24
         with:

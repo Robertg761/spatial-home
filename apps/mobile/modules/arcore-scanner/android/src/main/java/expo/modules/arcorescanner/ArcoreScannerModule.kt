@@ -1,0 +1,76 @@
+package expo.modules.arcorescanner
+
+import com.google.ar.core.ArCoreApk
+import com.google.ar.core.exceptions.UnavailableDeviceNotCompatibleException
+import com.google.ar.core.exceptions.UnavailableUserDeclinedInstallationException
+import expo.modules.kotlin.Promise
+import expo.modules.kotlin.functions.Queues
+import expo.modules.kotlin.modules.Module
+import expo.modules.kotlin.modules.ModuleDefinition
+
+class ArcoreScannerModule : Module() {
+  override fun definition() = ModuleDefinition {
+    Name("ArcoreScanner")
+
+    /**
+     * Whether this phone can run ARCore: "supported", "needs-install", "needs-update",
+     * "unsupported", or "checking" while ARCore is still finding out (ask again shortly).
+     */
+    AsyncFunction("getAvailabilityAsync") {
+      val context = appContext.reactContext ?: return@AsyncFunction "checking"
+      val availability = ArCoreApk.getInstance().checkAvailability(context)
+      when (availability) {
+        ArCoreApk.Availability.SUPPORTED_INSTALLED -> "supported"
+        ArCoreApk.Availability.SUPPORTED_NOT_INSTALLED -> "needs-install"
+        ArCoreApk.Availability.SUPPORTED_APK_TOO_OLD -> "needs-update"
+        ArCoreApk.Availability.UNSUPPORTED_DEVICE_NOT_CAPABLE -> "unsupported"
+        else -> if (availability.isTransient) "checking" else "unsupported"
+      }
+    }
+
+    /**
+     * Asks the user to install or update Google Play Services for AR. "installed" when it's ready,
+     * "requested" when the Play Store has opened (check again when the app returns), "declined",
+     * or "unsupported".
+     */
+    AsyncFunction("requestInstallAsync") { promise: Promise ->
+      val activity = appContext.currentActivity
+      if (activity == null) {
+        promise.reject("no-activity", "The app isn't in the foreground.", null)
+        return@AsyncFunction
+      }
+      try {
+        when (ArCoreApk.getInstance().requestInstall(activity, true)) {
+          ArCoreApk.InstallStatus.INSTALLED -> promise.resolve("installed")
+          else -> promise.resolve("requested")
+        }
+      } catch (e: UnavailableUserDeclinedInstallationException) {
+        promise.resolve("declined")
+      } catch (e: UnavailableDeviceNotCompatibleException) {
+        promise.resolve("unsupported")
+      } catch (e: Exception) {
+        promise.reject("install-failed", e.message ?: e.toString(), e)
+      }
+    }.runOnQueue(Queues.MAIN)
+
+    View(ArcoreScannerView::class) {
+      Events("onTrackingChange", "onAim", "onError")
+
+      Prop("active") { view: ArcoreScannerView, active: Boolean -> view.setActive(active) }
+
+      Prop("corners") { view: ArcoreScannerView, corners: List<List<Double>> -> view.setCorners(corners) }
+
+      AsyncFunction("getAimAsync") { view: ArcoreScannerView -> view.aim() }
+
+      OnViewDestroys { view: ArcoreScannerView -> view.destroy() }
+    }
+
+    OnActivityEntersForeground {
+      ArcoreScannerView.instances.toList().forEach { it.onHostResume() }
+    }
+
+    OnActivityEntersBackground {
+      ArcoreScannerView.instances.toList().forEach { it.onHostPause() }
+    }
+  }
+}

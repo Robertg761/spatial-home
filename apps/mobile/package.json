@@ -7,13 +7,14 @@
   "main": "expo-router/entry",
   "scripts": {
     "start": "expo start",
-    "android": "expo start --android",
-    "ios": "expo start --ios",
+    "android": "expo run:android",
+    "ios": "expo run:ios",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@spatial-home/ha-client": "*",
     "@spatial-home/home-model": "*",
+    "@spatial-home/scan-import": "*",
     "expo": "~57.0.28",
     "expo-constants": "~57.0.21",
     "expo-linking": "~57.0.12",

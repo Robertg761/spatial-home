@@ -1,0 +1,82 @@
+import { requireNativeView, requireOptionalNativeModule } from 'expo';
+import type { ComponentType, Ref } from 'react';
+import type { NativeSyntheticEvent, ViewProps } from 'react-native';
+
+/** A point in the AR session's world: metres, y up. */
+export type Vector3 = [number, number, number];
+
+export type ArcoreAvailability =
+  'supported' | 'needs-install' | 'needs-update' | 'unsupported' | 'checking';
+export type InstallResult = 'installed' | 'requested' | 'declined' | 'unsupported';
+
+export interface TrackingEvent {
+  state: 'tracking' | 'paused' | 'stopped';
+  reason:
+    | 'none'
+    | 'insufficient-light'
+    | 'excessive-motion'
+    | 'insufficient-features'
+    | 'camera-unavailable'
+    | 'bad-state';
+  floorFound: boolean;
+}
+
+export interface AimEvent {
+  /** Whether the crosshair is on the floor. */
+  onFloor: boolean;
+  point?: Vector3;
+  /** Distance along the floor from the last corner placed, in metres. */
+  fromLast?: number;
+  /** Distance along the floor to the first corner, for closing the room. */
+  toFirst?: number;
+}
+
+export interface ScannerError {
+  code:
+    | 'camera-permission'
+    | 'arcore-not-installed'
+    | 'arcore-too-old'
+    | 'app-too-old'
+    | 'device-not-supported'
+    | 'camera-unavailable'
+    | 'unknown';
+  message: string;
+}
+
+export interface ArcoreScannerViewProps extends ViewProps {
+  /** Runs the camera and AR session while true. */
+  active: boolean;
+  /** Corners placed so far, drawn joined by walls. */
+  corners: Vector3[];
+  onTrackingChange?: (event: NativeSyntheticEvent<TrackingEvent>) => void;
+  onAim?: (event: NativeSyntheticEvent<AimEvent>) => void;
+  onError?: (event: NativeSyntheticEvent<ScannerError>) => void;
+}
+
+export interface ArcoreScannerViewRef {
+  /** Where the crosshair meets the floor now, or null when it isn't on the floor. */
+  getAimAsync(): Promise<Vector3 | null>;
+}
+
+interface ArcoreScannerNativeModule {
+  getAvailabilityAsync(): Promise<ArcoreAvailability>;
+  requestInstallAsync(): Promise<InstallResult>;
+}
+
+// Absent on iPhone, on the web and in Expo Go, which can't load custom native code.
+const native = requireOptionalNativeModule<ArcoreScannerNativeModule>('ArcoreScanner');
+
+/** Whether this build of the app includes the Android scanner. */
+export const scannerIncluded = native !== null;
+
+export function getAvailabilityAsync(): Promise<ArcoreAvailability> {
+  return native ? native.getAvailabilityAsync() : Promise.resolve('unsupported');
+}
+
+export function requestInstallAsync(): Promise<InstallResult> {
+  return native ? native.requestInstallAsync() : Promise.resolve('unsupported');
+}
+
+export const ArcoreScannerView: ComponentType<
+  ArcoreScannerViewProps & { ref?: Ref<ArcoreScannerViewRef> }
+> | null = native ? requireNativeView('ArcoreScanner') : null;

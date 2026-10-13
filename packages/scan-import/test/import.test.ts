@@ -181,6 +181,80 @@ describe('several rooms in one session', () => {
   });
 });
 
+describe('rooms on several storeys', () => {
+  const tapped = (outline: Point2[], floor: number) =>
+    outline.map((point) => toWorld(point, floor, 0));
+  const beside = (dx: number) => bedroom.map(([x, y]): Point2 => [x + dx, y]);
+
+  test('puts furniture in a room on its own floor', () => {
+    // A bedroom directly above the living room, scanned second.
+    const result = imported(
+      importScan(
+        session([
+          { name: 'Living room', outline: tapped(bedroom, 0) },
+          {
+            name: 'Bedroom',
+            outline: tapped(bedroom, 2.8),
+            objects: [
+              { category: 'bed', center: toWorld([2, 1.5], 3.1, 0), size: [1.6, 0.6, 2], yaw: 0 },
+            ],
+          },
+        ])
+      )
+    );
+    expect(result.layout.fixtures.map((fixture) => fixture.roomId)).toEqual(['bedroom']);
+  });
+
+  test('starts a new storey once floors rise too far above its lowest', () => {
+    // A split level: each floor is a half storey above the last, but the top is a full one up.
+    const result = imported(
+      importScan(
+        session([
+          { name: 'Hall', outline: tapped(beside(0), 0) },
+          { name: 'Landing', outline: tapped(beside(5), 1.4) },
+          { name: 'Bedroom', outline: tapped(beside(10), 2.8) },
+        ])
+      )
+    );
+    expect(result.layout.floors.map((floor) => floor.elevation)).toEqual([0, 2.8]);
+    expect(result.layout.rooms.map((room) => room.floorId)).toEqual([
+      'floor-0',
+      'floor-0',
+      'floor-1',
+    ]);
+  });
+});
+
+describe('openings with a wall named', () => {
+  // A window near the north-west corner whose scanned centre is nearer the north wall.
+  const walls = wallsAround(bedroom, 2.4, 0).map((wall, i) => ({ id: `wall-${i}`, ...wall }));
+  const window = (wallId: string) => ({
+    kind: 'window' as const,
+    center: toWorld([0.15, 2.9], 1.5, 0),
+    width: 0.2,
+    height: 1,
+    wallId,
+  });
+
+  test('go on that wall', () => {
+    // wallsAround runs south, east, north, west, so wall-3 is the west wall.
+    const { layout } = imported(
+      importScan(session([{ name: 'Study', walls, openings: [window('wall-3')] }], 0))
+    );
+    expect(openingFacing(layout, layout.openings[0]!).compass).toBe('W');
+  });
+
+  test('go on the nearest wall when the name is unknown', () => {
+    const { layout, notes } = imported(
+      importScan(session([{ name: 'Study', walls, openings: [window('wall-9')] }], 0))
+    );
+    expect(openingFacing(layout, layout.openings[0]!).compass).toBe('N');
+    expect(notes.map((note) => note.message)).toEqual(
+      expect.arrayContaining([expect.stringContaining('wall-9')])
+    );
+  });
+});
+
 describe('a guided capture', () => {
   // An L-shaped kitchen captured by tapping corners, including an extra tap halfway along a wall.
   const kitchen: Point2[] = [

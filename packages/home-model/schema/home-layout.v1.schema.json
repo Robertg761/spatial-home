@@ -1,0 +1,605 @@
+{
+  "title": "Spatial Home layout, version 1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "format": {
+      "type": "string",
+      "const": "spatial-home/home-layout"
+    },
+    "version": {
+      "type": "number",
+      "const": 1
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "site": {
+      "type": "object",
+      "properties": {
+        "northBearing": {
+          "type": "number",
+          "minimum": 0,
+          "exclusiveMaximum": 360,
+          "description": "The compass bearing the top of the plan faces: 0 when the top of the plan is north, 90 when it is east."
+        }
+      },
+      "required": [
+        "northBearing"
+      ],
+      "additionalProperties": false
+    },
+    "floors": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "maxLength": 100,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]*$",
+            "description": "Unique across every item in the layout."
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "level": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991,
+            "description": "Storey number: 0 is the ground floor, negative numbers are below it."
+          },
+          "elevation": {
+            "type": "number",
+            "description": "Height of this floor surface above the ground floor, in metres."
+          },
+          "ha": {
+            "type": "object",
+            "properties": {
+              "floorId": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "required": [
+              "floorId"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "level",
+          "elevation"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "rooms": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "maxLength": 100,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]*$",
+            "description": "Unique across every item in the layout."
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "floorId": {
+            "type": "string",
+            "maxLength": 100,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]*$",
+            "description": "The floor this room is on."
+          },
+          "outline": {
+            "minItems": 3,
+            "type": "array",
+            "items": {
+              "type": "array",
+              "prefixItems": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                }
+              ],
+              "items": false,
+              "minItems": 2,
+              "maxItems": 2,
+              "description": "[x, y] on the plan, in metres."
+            },
+            "description": "Corners in order around the room. Wall i runs from corner i to corner i + 1, and the last wall closes the outline."
+          },
+          "ceilingHeight": {
+            "type": "number",
+            "exclusiveMinimum": 0,
+            "description": "Metres, greater than zero."
+          },
+          "ha": {
+            "type": "object",
+            "properties": {
+              "areaId": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "required": [
+              "areaId"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "floorId",
+          "outline",
+          "ceilingHeight"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "openings": {
+      "type": "array",
+      "items": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "door"
+              },
+              "id": {
+                "type": "string",
+                "maxLength": 100,
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]*$",
+                "description": "Unique across every item in the layout."
+              },
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              },
+              "wall": {
+                "type": "object",
+                "properties": {
+                  "roomId": {
+                    "type": "string",
+                    "maxLength": 100,
+                    "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]*$"
+                  },
+                  "index": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  }
+                },
+                "required": [
+                  "roomId",
+                  "index"
+                ],
+                "additionalProperties": false,
+                "description": "The wall of `roomId` the opening sits in."
+              },
+              "offset": {
+                "type": "number",
+                "minimum": 0,
+                "description": "Distance from the start of the wall to the centre of the opening."
+              },
+              "width": {
+                "type": "number",
+                "exclusiveMinimum": 0,
+                "description": "Metres, greater than zero."
+              },
+              "height": {
+                "type": "number",
+                "exclusiveMinimum": 0,
+                "description": "Metres, greater than zero."
+              },
+              "connects": {
+                "type": "string",
+                "maxLength": 100,
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]*$",
+                "description": "The room on the other side of the wall, or \"outside\"."
+              }
+            },
+            "required": [
+              "kind",
+              "id",
+              "wall",
+              "offset",
+              "width",
+              "height",
+              "connects"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "window"
+              },
+              "id": {
+                "type": "string",
+                "maxLength": 100,
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]*$",
+                "description": "Unique across every item in the layout."
+              },
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              },
+              "wall": {
+                "type": "object",
+                "properties": {
+                  "roomId": {
+                    "type": "string",
+                    "maxLength": 100,
+                    "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]*$"
+                  },
+                  "index": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  }
+                },
+                "required": [
+                  "roomId",
+                  "index"
+                ],
+                "additionalProperties": false,
+                "description": "The wall of `roomId` the opening sits in."
+              },
+              "offset": {
+                "type": "number",
+                "minimum": 0,
+                "description": "Distance from the start of the wall to the centre of the opening."
+              },
+              "width": {
+                "type": "number",
+                "exclusiveMinimum": 0,
+                "description": "Metres, greater than zero."
+              },
+              "height": {
+                "type": "number",
+                "exclusiveMinimum": 0,
+                "description": "Metres, greater than zero."
+              },
+              "connects": {
+                "type": "string",
+                "maxLength": 100,
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]*$",
+                "description": "The room on the other side of the wall, or \"outside\"."
+              },
+              "sillHeight": {
+                "type": "number",
+                "minimum": 0,
+                "description": "Height of the bottom of the window above the floor."
+              }
+            },
+            "required": [
+              "kind",
+              "id",
+              "wall",
+              "offset",
+              "width",
+              "height",
+              "connects",
+              "sillHeight"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "passage"
+              },
+              "id": {
+                "type": "string",
+                "maxLength": 100,
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]*$",
+                "description": "Unique across every item in the layout."
+              },
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              },
+              "wall": {
+                "type": "object",
+                "properties": {
+                  "roomId": {
+                    "type": "string",
+                    "maxLength": 100,
+                    "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]*$"
+                  },
+                  "index": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  }
+                },
+                "required": [
+                  "roomId",
+                  "index"
+                ],
+                "additionalProperties": false,
+                "description": "The wall of `roomId` the opening sits in."
+              },
+              "offset": {
+                "type": "number",
+                "minimum": 0,
+                "description": "Distance from the start of the wall to the centre of the opening."
+              },
+              "width": {
+                "type": "number",
+                "exclusiveMinimum": 0,
+                "description": "Metres, greater than zero."
+              },
+              "height": {
+                "type": "number",
+                "exclusiveMinimum": 0,
+                "description": "Metres, greater than zero."
+              },
+              "connects": {
+                "type": "string",
+                "maxLength": 100,
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]*$",
+                "description": "The room on the other side of the wall, or \"outside\"."
+              }
+            },
+            "required": [
+              "kind",
+              "id",
+              "wall",
+              "offset",
+              "width",
+              "height",
+              "connects"
+            ],
+            "additionalProperties": false,
+            "description": "A gap in a wall with no door, such as an open archway."
+          }
+        ]
+      }
+    },
+    "fixtures": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "maxLength": 100,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]*$",
+            "description": "Unique across every item in the layout."
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "kind": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 50,
+            "description": "What it is, such as \"bed\", \"sofa\", \"armchair\", \"desk\", \"table\" or \"tv\"."
+          },
+          "roomId": {
+            "type": "string",
+            "maxLength": 100,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]*$",
+            "description": "The room it is in."
+          },
+          "position": {
+            "type": "array",
+            "prefixItems": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "items": false,
+            "minItems": 2,
+            "maxItems": 2,
+            "description": "Centre of the footprint on the plan."
+          },
+          "size": {
+            "type": "object",
+            "properties": {
+              "width": {
+                "type": "number",
+                "exclusiveMinimum": 0,
+                "description": "Metres, greater than zero."
+              },
+              "depth": {
+                "type": "number",
+                "exclusiveMinimum": 0,
+                "description": "Metres, greater than zero."
+              },
+              "height": {
+                "type": "number",
+                "exclusiveMinimum": 0,
+                "description": "Metres, greater than zero."
+              }
+            },
+            "required": [
+              "width",
+              "depth",
+              "height"
+            ],
+            "additionalProperties": false
+          },
+          "rotation": {
+            "type": "number",
+            "minimum": 0,
+            "exclusiveMaximum": 360,
+            "description": "Rotation of the footprint, clockwise."
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "kind",
+          "roomId",
+          "position",
+          "size",
+          "rotation"
+        ],
+        "additionalProperties": false,
+        "description": "Furniture and other things people refer to: the bed, the sofa, the desk."
+      }
+    },
+    "devices": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "maxLength": 100,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]*$",
+            "description": "Unique across every item in the layout."
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "roomId": {
+            "type": "string",
+            "maxLength": 100,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]*$",
+            "description": "The room it is in."
+          },
+          "position": {
+            "type": "array",
+            "prefixItems": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "items": false,
+            "minItems": 3,
+            "maxItems": 3,
+            "description": "[x, y, z]: plan position, and height above the floor, in metres."
+          },
+          "heading": {
+            "description": "Plan heading the device faces. Needed for any coverage narrower than 360°.",
+            "type": "number",
+            "minimum": 0,
+            "exclusiveMaximum": 360
+          },
+          "tilt": {
+            "description": "Degrees below horizontal; negative points up.",
+            "type": "number",
+            "minimum": -90,
+            "maximum": 90
+          },
+          "coverage": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "motion",
+                    "presence",
+                    "camera",
+                    "light"
+                  ]
+                },
+                "range": {
+                  "type": "number",
+                  "exclusiveMinimum": 0,
+                  "description": "Metres, greater than zero."
+                },
+                "fieldOfView": {
+                  "description": "Horizontal angle covered, centred on the heading. Omitted means all around (360).",
+                  "type": "number",
+                  "exclusiveMinimum": 0,
+                  "maximum": 360
+                }
+              },
+              "required": [
+                "kind",
+                "range"
+              ],
+              "additionalProperties": false,
+              "description": "What a device senses or lights, as a cone or circle around it."
+            }
+          },
+          "ha": {
+            "description": "A physical device can carry several entities, such as motion, temperature and battery.",
+            "type": "object",
+            "properties": {
+              "deviceId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "entityIds": {
+                "minItems": 1,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "pattern": "^[a-z0-9_]+\\.[a-z0-9_]+$"
+                }
+              }
+            },
+            "required": [
+              "entityIds"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "roomId",
+          "position"
+        ],
+        "additionalProperties": false,
+        "description": "A physical device placed in the home."
+      }
+    }
+  },
+  "required": [
+    "format",
+    "version",
+    "site",
+    "floors",
+    "rooms",
+    "openings",
+    "fixtures",
+    "devices"
+  ],
+  "additionalProperties": false,
+  "description": "A Spatial Home layout: the rooms of a home, how they connect, and what is in them."
+}

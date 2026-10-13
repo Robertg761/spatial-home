@@ -57,11 +57,11 @@ One TypeScript monorepo using npm workspaces. Apps are what people run; packages
 | [`apps/editor`](apps/editor) | Web editor: draw the floor plan, see it in 3D, place Home Assistant devices | React, Vite |
 | [`apps/mobile`](apps/mobile) | iOS and Android app: scan rooms into the same home model | React Native, Expo |
 | [`packages/ha-client`](packages/ha-client) | Connection to Home Assistant: live states, registries, service calls | TypeScript, no dependencies |
+| [`packages/home-model`](packages/home-model) | The `home-layout.json` format every app reads and writes, with validation and plan geometry | TypeScript, Zod |
 | [`scripts`](scripts) | Developer tools, such as `ha-check` | Node |
 
 Planned, and added when their phase starts:
 
-- `packages/home-model`: the `home-layout.json` format, with validation, that every app reads and writes.
 - `apps/server`: the spatial reasoning service and MCP server for AI agents.
 
 Shared packages ship TypeScript source rather than build output. Vite, Metro (the bundler behind Expo) and Node 22.18+ all run it directly, so a change in a package shows up in the apps immediately. The editor and the phone app use the same React version, so the workspace holds one copy of React.

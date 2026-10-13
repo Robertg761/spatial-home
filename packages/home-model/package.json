@@ -1,0 +1,19 @@
+{
+  "name": "@spatial-home/home-model",
+  "version": "0.1.0",
+  "private": true,
+  "description": "The home-layout.json format: rooms, openings, fixtures and placed devices, with validation and plan geometry",
+  "license": "Apache-2.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./schema.json": "./schema/home-layout.v1.schema.json"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "schema": "node scripts/write-schema.ts"
+  },
+  "dependencies": {
+    "zod": "^4.6.7"
+  }
+}

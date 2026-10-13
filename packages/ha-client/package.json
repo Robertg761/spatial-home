@@ -1,0 +1,11 @@
+{
+  "name": "@spatial-home/ha-client",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Home Assistant WebSocket client for Spatial Home: connection, auth, requests, subscriptions and live entity state",
+  "license": "Apache-2.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  }
+}

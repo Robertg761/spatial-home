@@ -48,6 +48,19 @@ The model is designed to be useful even without AI and, over time, interoperable
 
 *Spatial Home is a proposed product direction; the capabilities above describe its goals, not an already completed application.*
 
+## Development
+
+The code is TypeScript in npm workspaces under `packages/`. It needs Node 22.18 or later, which runs TypeScript directly, so there is no build step yet.
+
+- [`packages/ha-client`](packages/ha-client): the Home Assistant WebSocket client that the editor and the spatial server share.
+
+```sh
+npm install
+npm test             # unit tests
+npm run typecheck
+npm run ha:check     # connect to your own Home Assistant (see .env.example)
+```
+
 ## License
 
 Licensed under the [Apache License 2.0](LICENSE).

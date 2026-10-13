@@ -193,8 +193,9 @@ export class HomeAssistantConnection {
   #heartbeatId: number | null = null;
   #reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   /**
-   * Bumped by every connect and close. State listeners run synchronously and may call connect()
-   * or close() themselves, so code that notifies them checks this before carrying on.
+   * Bumped by every connect and close. State listeners and startup tasks' abort handlers run
+   * synchronously and may call connect() or close() themselves, so code that notifies them checks
+   * this before carrying on.
    */
   #generation = 0;
   /** The startup in progress while `syncing`. */
@@ -279,11 +280,13 @@ export class HomeAssistantConnection {
 
   /** Closes the connection and stops reconnecting. */
   close(): void {
-    this.#generation += 1;
+    const generation = ++this.#generation;
     this.#clearReconnectTimer();
     const socket = this.#socket;
     if (socket) {
       this.#teardown(socket, new HomeAssistantError('Connection closed', 'connection_lost'));
+      // A startup task's abort handler reconnected during teardown; the later call wins.
+      if (this.#generation !== generation) return;
     }
     this.#setState({
       status: 'closed',
@@ -392,6 +395,7 @@ export class HomeAssistantConnection {
     const previous = this.#socket;
     if (previous) {
       this.#teardown(previous, new HomeAssistantError('Connection replaced', 'connection_lost'));
+      if (this.#generation !== generation) return;
     }
 
     this.#setState({
@@ -470,7 +474,10 @@ export class HomeAssistantConnection {
 
   #failConnection(socket: WebSocketLike, reason: DisconnectReason, error: Error | null = null) {
     if (this.#socket !== socket) return;
+    const generation = this.#generation;
     this.#teardown(socket, new HomeAssistantError('Connection lost', 'connection_lost'));
+    // A startup task's abort handler closed or reconnected during teardown.
+    if (this.#generation !== generation) return;
     this.#afterConnectionLost(reason, error);
   }
 
@@ -574,7 +581,9 @@ export class HomeAssistantConnection {
           'auth_invalid'
         );
         this.#log.warn('Home Assistant rejected the access token');
+        const generation = this.#generation;
         this.#teardown(socket, error);
+        if (this.#generation !== generation) return;
         this.#setState({ status: 'auth-failed', reason: null, error, nextRetryAt: null });
         return;
       }

@@ -20,7 +20,16 @@ export interface LayoutIssue {
 
 export type ValidationResult =
   | { ok: true; layout: HomeLayout; warnings: LayoutIssue[] }
-  | { ok: false; errors: LayoutIssue[]; warnings: LayoutIssue[] };
+  | {
+      ok: false;
+      errors: LayoutIssue[];
+      warnings: LayoutIssue[];
+      /**
+       * Present when the file has the right structure but its contents have errors, such as a
+       * window that doesn't fit its wall, so an editor can open it for the errors to be fixed.
+       */
+      layout?: HomeLayout;
+    };
 
 /** Parses the text of a home-layout.json file. */
 export function parseLayoutJson(text: string): ValidationResult {
@@ -63,7 +72,7 @@ export function validateLayout(data: unknown): ValidationResult {
   const errors = issues.filter((issue) => issue.severity === 'error');
   const warnings = issues.filter((issue) => issue.severity === 'warning');
   return errors.length > 0
-    ? { ok: false, errors, warnings }
+    ? { ok: false, errors, warnings, layout: parsed.data }
     : { ok: true, layout: parsed.data, warnings };
 }
 

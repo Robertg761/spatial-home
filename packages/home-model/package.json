@@ -7,7 +7,8 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./schema.json": "./schema/home-layout.v1.schema.json"
+    "./schema.json": "./schema/home-layout.v1.schema.json",
+    "./examples/*": "./examples/*"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

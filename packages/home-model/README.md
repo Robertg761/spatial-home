@@ -77,7 +77,7 @@ if (!result.ok) {
 }
 ```
 
-Validation checks the structure, that every reference points at something that exists, and that the geometry holds together: outlines that don't cross themselves, and openings that fit their walls. It returns **errors**, which make a layout unusable, and **warnings** for likely mistakes, such as a fixture outside its room or one entity linked to two devices. Each issue has a `code` and a `path` into the file, such as `["openings", 3, "offset"]`, for the editor to point at.
+Validation checks the structure, that every reference points at something that exists, and that the geometry holds together: outlines that don't cross themselves, and openings that fit their walls. It returns **errors**, which make a layout unusable, and **warnings** for likely mistakes, such as a fixture outside its room or one entity linked to two devices. Each issue has a `code` and a `path` into the file, such as `["openings", 3, "offset"]`, for the editor to point at. When a file has errors but the right structure, the failed result still carries its `layout`, so an editor can open it and show what to fix.
 
 The geometry helpers cover what the editor and the spatial server both need: area, centroid, point in polygon, walls and their outward normals, where an opening sits, which way it faces, and which rooms connect.
 

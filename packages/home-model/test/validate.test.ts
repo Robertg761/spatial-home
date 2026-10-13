@@ -203,6 +203,21 @@ describe('validateLayout', () => {
     ]);
   });
 
+  test('returns a structurally valid layout with its errors, for an editor to open', () => {
+    const result = modified((layout) => {
+      layout.openings[0]!.offset = 1.8;
+    });
+    expect(result.ok).toBe(false);
+    expect(!result.ok && result.layout?.openings[0]?.offset).toBe(1.8);
+  });
+
+  test('returns no layout when the structure is wrong', () => {
+    const result = modified((layout) => {
+      layout.rooms[0]!.ceilingHeight = -1;
+    });
+    expect(!result.ok && result.layout).toBeUndefined();
+  });
+
   test('returns warnings alongside errors', () => {
     const result = modified((layout) => {
       layout.rooms[0]!.floorId = 'attic';

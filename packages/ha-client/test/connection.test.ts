@@ -341,6 +341,24 @@ describe('subscriptions', () => {
     connection.close();
   });
 
+  test('waits for a slow subscription confirmation instead of timing it out', async () => {
+    const { connection, socket } = await connected({ heartbeatIntervalMs: 600_000 });
+    const events: unknown[] = [];
+    connection.subscribeEvents('state_changed', (event) => events.push(event));
+    const { id } = socket.lastSent('subscribe_events');
+
+    // Far past the 15 s request timeout, on a connection that is still alive.
+    await vi.advanceTimersByTimeAsync(60_000);
+    socket.reply('subscribe_events');
+    socket.receive({ id, type: 'event', event: { n: 1 } });
+    expect(events).toEqual([{ n: 1 }]);
+
+    await flush();
+    connection.subscribeEvents('state_changed', () => {});
+    expect(socket.sentOfType('subscribe_events')).toHaveLength(2);
+    connection.close();
+  });
+
   test('keeps a throwing handler from breaking the connection', async () => {
     const { connection, socket } = await connected();
     connection.subscribeEvents('state_changed', () => {

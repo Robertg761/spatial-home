@@ -137,7 +137,7 @@ interface PendingRequest {
   socket: WebSocketLike;
   resolve: (result: unknown) => void;
   reject: (error: Error) => void;
-  timer: ReturnType<typeof setTimeout>;
+  timer: ReturnType<typeof setTimeout> | null;
 }
 
 interface Subscription {
@@ -672,7 +672,8 @@ export class HomeAssistantConnection {
 
   // --- Requests ---
 
-  #send(payload: CommandPayload, timeoutMs = this.#requestTimeoutMs) {
+  /** A null timeout waits as long as the socket lives. */
+  #send(payload: CommandPayload, timeoutMs: number | null = this.#requestTimeoutMs) {
     const socket = this.#socket;
     if (!socket || socket.readyState !== SOCKET_OPEN) {
       throw new HomeAssistantError('Not connected to Home Assistant', 'not_connected');
@@ -686,10 +687,13 @@ export class HomeAssistantConnection {
 
     const id = this.#nextId++;
     const result = new Promise<unknown>((resolve, reject) => {
-      const timer = setTimeout(() => {
-        if (!this.#clearPending(id)) return;
-        reject(new HomeAssistantError(`No reply to ${payload.type} in time`, 'timeout'));
-      }, timeoutMs);
+      const timer =
+        timeoutMs === null
+          ? null
+          : setTimeout(() => {
+              if (!this.#clearPending(id)) return;
+              reject(new HomeAssistantError(`No reply to ${payload.type} in time`, 'timeout'));
+            }, timeoutMs);
       this.#pending.set(id, { socket, resolve, reject, timer });
       try {
         socket.send(JSON.stringify({ ...payload, id }));
@@ -705,7 +709,7 @@ export class HomeAssistantConnection {
     const pending = this.#pending.get(id);
     if (!pending) return null;
     this.#pending.delete(id);
-    clearTimeout(pending.timer);
+    if (pending.timer !== null) clearTimeout(pending.timer);
     return pending;
   }
 
@@ -726,7 +730,10 @@ export class HomeAssistantConnection {
 
     let request: { id: number; result: Promise<unknown> };
     try {
-      request = this.#send(subscription.payload);
+      // No timeout: a subscribe request that timed out on a live socket would leave the subscription
+      // silent until the next reconnect, and a late confirmation would leave a server subscription
+      // nobody tracks. A dead socket is caught by the heartbeat, which rejects this request.
+      request = this.#send(subscription.payload, null);
     } catch (error) {
       this.#log.warn('Could not send a subscription request:', error);
       return;

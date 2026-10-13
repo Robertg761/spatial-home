@@ -112,6 +112,18 @@ describe('polygons', () => {
       ],
       false,
     ],
+    // Two 10 cm walls crossing at their centres, at an angle shallow enough that the raw cross
+    // product falls below the tolerance even though their ends are 4 µm apart.
+    [
+      'a shallow bow tie',
+      [
+        [0, 0],
+        [0.1, 0.000004],
+        [0.1, 0],
+        [0, 0.000004],
+      ],
+      false,
+    ],
   ])('%s is simple: %s', (_name, outline, simple) => {
     expect(isSimplePolygon(outline)).toBe(simple);
   });

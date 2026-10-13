@@ -216,10 +216,16 @@ function cross(o: Point2, a: Point2, b: Point2): number {
 
 /** Whether two segments cross or touch, including touching end to end or overlapping. */
 function segmentsTouch(a1: Point2, a2: Point2, b1: Point2, b2: Point2): boolean {
-  const d1 = cross(b1, b2, a1);
-  const d2 = cross(b1, b2, a2);
-  const d3 = cross(a1, a2, b1);
-  const d4 = cross(a1, a2, b2);
+  // Signed distances, in metres, of each segment's ends from the other segment's line. A cross
+  // product is in square metres, so comparing it with a tolerance in metres would let walls that
+  // cross at a shallow angle slip through.
+  const lengthA = distance(a1, a2);
+  const lengthB = distance(b1, b2);
+  if (lengthA === 0 || lengthB === 0) return false;
+  const d1 = cross(b1, b2, a1) / lengthB;
+  const d2 = cross(b1, b2, a2) / lengthB;
+  const d3 = cross(a1, a2, b1) / lengthA;
+  const d4 = cross(a1, a2, b2) / lengthA;
   if (
     ((d1 > EPSILON && d2 < -EPSILON) || (d1 < -EPSILON && d2 > EPSILON)) &&
     ((d3 > EPSILON && d4 < -EPSILON) || (d3 < -EPSILON && d4 > EPSILON))

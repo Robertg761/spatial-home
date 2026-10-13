@@ -1,0 +1,320 @@
+import { openingFacing, polygonArea, type HomeLayout, type Point2 } from '@spatial-home/home-model';
+import { describe, expect, test } from 'vitest';
+import { importScan, type ImportResult } from '../src/import.ts';
+import { session, toWorld, wallsAround } from './fixtures.ts';
+
+const NORTH = 20;
+const bedroom: Point2[] = [
+  [0, 0],
+  [4, 0],
+  [4, 3],
+  [0, 3],
+];
+
+function imported(result: ImportResult): Extract<ImportResult, { ok: true }> {
+  if (!result.ok) throw new Error(result.errors.join('\n'));
+  return result;
+}
+
+function expectOutline(actual: Point2[], expected: Point2[], tolerance = 0.03) {
+  // Same corners, in some order and from some starting corner.
+  expect(actual).toHaveLength(expected.length);
+  for (const corner of expected) {
+    const nearest = Math.min(
+      ...actual.map((point) => Math.hypot(point[0] - corner[0], point[1] - corner[1]))
+    );
+    expect(nearest).toBeLessThan(tolerance);
+  }
+}
+
+function roomPlanBedroom() {
+  return session(
+    [
+      {
+        name: 'Bedroom',
+        walls: wallsAround(bedroom, 2.45, NORTH),
+        openings: [
+          // A door in the south wall, and a window in the west wall from 0.9 m to 2.1 m up.
+          { kind: 'door', center: toWorld([1, 0], 1.03, NORTH), width: 0.82, height: 2.06 },
+          { kind: 'window', center: toWorld([0, 1.5], 1.5, NORTH), width: 1.2, height: 1.2 },
+        ],
+        objects: [
+          // A bed along the east wall, turned a quarter anticlockwise from the plan's axes.
+          {
+            category: 'bed',
+            center: toWorld([2.8, 1.5], 0.3, NORTH),
+            size: [1.6, 0.6, 2.0],
+            yaw: ((90 + NORTH) * Math.PI) / 180,
+          },
+          {
+            category: 'storage',
+            center: toWorld([0.4, 2.7], 0.9, NORTH),
+            size: [0.8, 1.8, 0.5],
+            yaw: (NORTH * Math.PI) / 180,
+          },
+        ],
+      },
+    ],
+    NORTH
+  );
+}
+
+describe('a RoomPlan-style scan', () => {
+  test('becomes a valid layout', () => {
+    const { layout, validation } = imported(importScan(roomPlanBedroom()));
+    expect(validation.ok && validation.warnings).toEqual([]);
+    expect(layout.rooms).toHaveLength(1);
+  });
+
+  test('closes the walls into the room, squared up to the plan', () => {
+    const { layout } = imported(importScan(roomPlanBedroom()));
+    const [room] = layout.rooms;
+    expectOutline(room!.outline, bedroom);
+    expect(polygonArea(room!.outline)).toBeCloseTo(12, 0);
+    expect(room!.ceilingHeight).toBe(2.45);
+  });
+
+  test('keeps true compass directions after turning the plan', () => {
+    const { layout } = imported(importScan(roomPlanBedroom()));
+    expect(layout.site.northBearing).toBe(0);
+    const facing = (kind: string) =>
+      openingFacing(
+        layout,
+        layout.openings.find((o) => o.kind === kind)!
+      ).compass;
+    expect(facing('window')).toBe('W');
+    expect(facing('door')).toBe('S');
+  });
+
+  test('puts openings on their walls with their sizes', () => {
+    const { layout } = imported(importScan(roomPlanBedroom()));
+    const window = layout.openings.find((opening) => opening.kind === 'window');
+    expect(window).toMatchObject({ width: 1.2, height: 1.2, sillHeight: 0.9, connects: 'outside' });
+    const door = layout.openings.find((opening) => opening.kind === 'door');
+    expect(door).toMatchObject({ width: 0.82, height: 2.06 });
+  });
+
+  test('turns furniture with the plan', () => {
+    const { layout } = imported(importScan(roomPlanBedroom()));
+    const bed = layout.fixtures.find((fixture) => fixture.kind === 'bed')!;
+    expect(bed).toMatchObject({ name: 'Bed', size: { width: 1.6, depth: 2, height: 0.6 } });
+    // A quarter turn anticlockwise is 270° clockwise.
+    expect(bed.rotation).toBe(270);
+    expect(layout.fixtures.find((fixture) => fixture.kind === 'storage')!.rotation).toBe(0);
+    expect(bed.position[0]).toBeCloseTo(2.8, 1);
+    expect(bed.position[1]).toBeCloseTo(1.5, 1);
+  });
+
+  test('says when a door may not really lead outside', () => {
+    const { notes } = imported(importScan(roomPlanBedroom()));
+    expect(notes.map((note) => note.message)).toEqual(
+      expect.arrayContaining([expect.stringContaining('1 door leads outside')])
+    );
+  });
+
+  test('can keep the scan orientation', () => {
+    const { layout } = imported(importScan(roomPlanBedroom(), { alignToWalls: false }));
+    expect(layout.site.northBearing).toBe(NORTH);
+    expect(
+      openingFacing(
+        layout,
+        layout.openings.find((o) => o.kind === 'window')!
+      ).compass
+    ).toBe('W');
+  });
+});
+
+describe('several rooms in one session', () => {
+  // A hallway and a bedroom with a 15 cm wall between them, and the door between them seen from
+  // both rooms.
+  const hallway: Point2[] = [
+    [4.15, 0],
+    [6, 0],
+    [6, 3],
+    [4.15, 3],
+  ];
+
+  function twoRooms(floor = 0) {
+    return session(
+      [
+        {
+          category: 'bedroom',
+          walls: wallsAround(bedroom, 2.45, NORTH),
+          openings: [
+            { kind: 'door', center: toWorld([4, 2], 1.03, NORTH), width: 0.8, height: 2.05 },
+          ],
+        },
+        {
+          name: 'Hallway',
+          walls: wallsAround(hallway, 2.45, NORTH, floor),
+          openings: [
+            { kind: 'door', center: toWorld([4.15, 2.02], 1.03, NORTH), width: 0.8, height: 2.05 },
+            { kind: 'opening', center: toWorld([6, 1.5], 1, NORTH), width: 1, height: 2 },
+          ],
+        },
+      ],
+      NORTH
+    );
+  }
+
+  test('links a door to the room behind it, once', () => {
+    const { layout, validation } = imported(importScan(twoRooms()));
+    expect(validation.ok).toBe(true);
+    expect(layout.rooms.map((room) => room.name)).toEqual(['Bedroom', 'Hallway']);
+    const doors = layout.openings.filter((opening) => opening.kind === 'door');
+    expect(doors).toHaveLength(1);
+    expect(doors[0]).toMatchObject({ wall: { roomId: 'bedroom' }, connects: 'hallway' });
+    expect(layout.openings.find((opening) => opening.kind === 'passage')).toMatchObject({
+      connects: 'outside',
+    });
+  });
+
+  test('puts rooms on different storeys onto separate floors', () => {
+    const { layout } = imported(importScan(twoRooms(2.8)));
+    expect(layout.floors).toEqual([
+      { id: 'floor-0', name: 'Ground floor', level: 0, elevation: 0 },
+      { id: 'floor-1', name: 'Floor 1', level: 1, elevation: 2.8 },
+    ]);
+    expect(layout.rooms.map((room) => room.floorId)).toEqual(['floor-0', 'floor-1']);
+    // The bedroom door no longer has a room behind it on its own floor.
+    expect(layout.openings.find((opening) => opening.kind === 'door')!.connects).toBe('outside');
+  });
+});
+
+describe('a guided capture', () => {
+  // An L-shaped kitchen captured by tapping corners, including an extra tap halfway along a wall.
+  const kitchen: Point2[] = [
+    [0, 0],
+    [2, 0],
+    [5, 0],
+    [5, 2],
+    [2.5, 2],
+    [2.5, 4],
+    [0, 4],
+  ];
+
+  test('uses the tapped corners, dropping ones on a straight wall', () => {
+    const result = imported(
+      importScan(
+        session([{ name: 'Kitchen', outline: kitchen.map((point) => toWorld(point, 0, 0)) }])
+      )
+    );
+    const room = result.layout.rooms[0]!;
+    expectOutline(
+      room.outline,
+      kitchen.filter((_, i) => i !== 1),
+      0.001
+    );
+    expect(room.ceilingHeight).toBe(2.5);
+    expect(result.notes.map((note) => note.message)).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('no wall heights'),
+        expect.stringContaining("doesn't say which way is north"),
+      ])
+    );
+    expect(result.validation.ok).toBe(true);
+  });
+});
+
+test('uses a measured ceiling height', () => {
+  const result = imported(
+    importScan(
+      session([
+        {
+          name: 'Kitchen',
+          ceilingHeight: 2.38,
+          outline: bedroom.map((point) => toWorld(point, 0, 0)),
+        },
+      ])
+    )
+  );
+  expect(result.layout.rooms[0]!.ceilingHeight).toBe(2.38);
+  expect(result.notes.map((note) => note.message).join(' ')).not.toContain('no wall heights');
+});
+
+describe('imperfect scans', () => {
+  test('leaves out a stray wall piece that is not part of the outline', () => {
+    const walls = wallsAround(bedroom, 2.4, 0);
+    // A short freestanding wall in the middle of the room.
+    walls.push({ start: toWorld([2, 1], 0, 0), end: toWorld([2, 2], 0, 0), height: 1 });
+    const result = imported(importScan(session([{ name: 'Study', walls }])));
+    expectOutline(result.layout.rooms[0]!.outline, bedroom);
+    expect(result.notes.map((note) => note.message)).toEqual(
+      expect.arrayContaining([expect.stringContaining('left out 1 wall piece')])
+    );
+  });
+
+  test('falls back to the shape around walls that do not join up', () => {
+    const walls = wallsAround(bedroom, 2.4, 0).slice(0, 3);
+    const result = imported(importScan(session([{ name: 'Study', walls }])));
+    expect(polygonArea(result.layout.rooms[0]!.outline)).toBeGreaterThan(10);
+    expect(result.notes.map((note) => note.message)).toEqual(
+      expect.arrayContaining([expect.stringContaining("don't join into a closed loop")])
+    );
+  });
+
+  test('leaves out openings that are not on a wall, and stairs', () => {
+    const result = imported(
+      importScan(
+        session([
+          {
+            name: 'Study',
+            walls: wallsAround(bedroom, 2.4, 0),
+            openings: [{ kind: 'window', center: toWorld([2, 1.5], 1.5, 0), width: 1, height: 1 }],
+            objects: [
+              { category: 'stairs', center: toWorld([1, 1], 1, 0), size: [1, 2, 3], yaw: 0 },
+            ],
+          },
+        ])
+      )
+    );
+    expect(result.layout.openings).toEqual([]);
+    expect(result.layout.fixtures).toEqual([]);
+    expect(result.notes).toHaveLength(3);
+  });
+
+  test('numbers repeated furniture names', () => {
+    const chair = (x: number) => ({
+      category: 'chair',
+      center: toWorld([x, 1], 0.45, 0),
+      size: [0.5, 0.9, 0.5] as [number, number, number],
+      yaw: 0,
+    });
+    const result = imported(
+      importScan(
+        session([
+          { name: 'Study', walls: wallsAround(bedroom, 2.4, 0), objects: [chair(1), chair(2)] },
+        ])
+      )
+    );
+    expect(result.layout.fixtures.map((fixture) => [fixture.id, fixture.name])).toEqual([
+      ['chair', 'Chair'],
+      ['chair-2', 'Chair 2'],
+    ]);
+  });
+});
+
+describe('importScan', () => {
+  test('rejects input that is not a scan', () => {
+    const result = importScan({
+      format: 'spatial-home/room-scan',
+      version: 1,
+      rooms: [{ walls: [{ start: [0, 0], end: [1, 0, 0], height: 2 }] }],
+    });
+    expect(result.ok).toBe(false);
+    expect(!result.ok && result.errors[0]).toContain('rooms.0.walls.0.start');
+  });
+
+  test('rejects a room with nothing to build an outline from', () => {
+    const result = importScan(session([{ name: 'Empty', walls: [] }]));
+    expect(result).toEqual({
+      ok: false,
+      errors: ['Room 1 has neither an outline nor at least three walls.'],
+    });
+  });
+
+  test('names the home when asked', () => {
+    const { layout } = imported(importScan(roomPlanBedroom(), { name: 'Flat' }));
+    expect((layout as HomeLayout).name).toBe('Flat');
+  });
+});

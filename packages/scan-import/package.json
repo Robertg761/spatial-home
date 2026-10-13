@@ -1,0 +1,20 @@
+{
+  "name": "@spatial-home/scan-import",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Turns a phone's room scan (iPhone RoomPlan or Android ARCore) into a home-layout.json",
+  "license": "Apache-2.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./schema.json": "./schema/room-scan.v1.schema.json"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "schema": "node scripts/write-schema.ts"
+  },
+  "dependencies": {
+    "@spatial-home/home-model": "*",
+    "zod": "^4.6.7"
+  }
+}

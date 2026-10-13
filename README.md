@@ -58,6 +58,7 @@ One TypeScript monorepo using npm workspaces. Apps are what people run; packages
 | [`apps/mobile`](apps/mobile) | iOS and Android app: scan rooms into the same home model | React Native, Expo |
 | [`packages/ha-client`](packages/ha-client) | Connection to Home Assistant: live states, registries, service calls | TypeScript, no dependencies |
 | [`packages/home-model`](packages/home-model) | The `home-layout.json` format every app reads and writes, with validation and plan geometry | TypeScript, Zod |
+| [`packages/scan-import`](packages/scan-import) | Turns an iPhone or Android room scan into a `home-layout.json` | TypeScript, Zod |
 | [`scripts`](scripts) | Developer tools, such as `ha-check` | Node |
 
 Planned, and added when their phase starts:

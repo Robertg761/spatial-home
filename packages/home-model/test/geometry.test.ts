@@ -8,6 +8,7 @@ import {
   pointInPolygon,
   polygonArea,
   polygonCentroid,
+  roomBehindWall,
   roomConnections,
   roomWalls,
   signedArea,
@@ -189,6 +190,28 @@ describe('directions', () => {
     layout.site.northBearing = 90;
     const window = layout.openings.find((o) => o.id === 'living-room-window')!;
     expect(openingFacing(layout, window)).toEqual({ bearing: 0, compass: 'N' });
+  });
+});
+
+describe('roomBehindWall', () => {
+  test('finds the room sharing a wall, or outside', () => {
+    const layout = sampleLayout();
+    expect(roomBehindWall(layout, 'living-room', 1, 2)).toBe('hallway');
+    expect(roomBehindWall(layout, 'living-room', 2, 3)).toBe('kitchen');
+    expect(roomBehindWall(layout, 'living-room', 3, 2)).toBe('outside');
+  });
+
+  test("looks across a wall's thickness, but no further", () => {
+    const layout = sampleLayout();
+    // Shrink the hallway as a scan would see it: its inner surface 20 cm in from the living room.
+    layout.rooms[2]!.outline = [
+      [5.2, 0],
+      [7, 0],
+      [7, 8],
+      [5.2, 8],
+    ];
+    expect(roomBehindWall(layout, 'living-room', 1, 2)).toBe('hallway');
+    expect(roomBehindWall(layout, 'living-room', 1, 2, 0.1)).toBe('outside');
   });
 });
 

@@ -1,4 +1,4 @@
-import type { HomeLayout, Opening, Point2, Room } from './schema.ts';
+import { OUTSIDE, type HomeLayout, type Opening, type Point2, type Room } from './schema.ts';
 
 /** Lengths below this many metres count as zero, absorbing floating-point error. */
 export const EPSILON = 1e-6;
@@ -163,6 +163,39 @@ export function openingFacing(layout: HomeLayout, opening: Opening): Facing {
     throw new RangeError(`Opening ${opening.id} is in an unknown room ${opening.wall.roomId}`);
   const bearing = compassBearing(layout, planHeading(wallOutwardNormal(room, opening.wall.index)));
   return { bearing, compass: compassPoint(bearing) };
+}
+
+/**
+ * What is on the other side of a room's wall at a point along it: another room on the same floor,
+ * or "outside". It looks a little way past the wall, then further, up to `maxThickness` metres,
+ * because a scanned room's walls are its inner surfaces, so the room next door starts a wall's
+ * thickness away.
+ */
+export function roomBehindWall(
+  layout: Pick<HomeLayout, 'rooms'>,
+  roomId: string,
+  wallIndex: number,
+  offset: number,
+  maxThickness = 0.45
+): string {
+  const room = layout.rooms.find((candidate) => candidate.id === roomId);
+  const wall = room ? roomWalls(room)[wallIndex] : undefined;
+  if (!room || !wall || wall.length === 0) return OUTSIDE;
+  const t = offset / wall.length;
+  const [nx, ny] = wallOutwardNormal(room, wallIndex);
+  const [px, py] = [
+    wall.start[0] + (wall.end[0] - wall.start[0]) * t,
+    wall.start[1] + (wall.end[1] - wall.start[1]) * t,
+  ];
+  const neighbours = layout.rooms.filter(
+    (other) => other.id !== room.id && other.floorId === room.floorId
+  );
+  for (let depth = 0.05; depth <= maxThickness + EPSILON; depth += 0.1) {
+    const probe: Point2 = [px + nx * depth, py + ny * depth];
+    const found = neighbours.find((other) => pointInPolygon(probe, other.outline));
+    if (found) return found.id;
+  }
+  return OUTSIDE;
 }
 
 export interface Connection {

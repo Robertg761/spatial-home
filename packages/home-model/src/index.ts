@@ -46,6 +46,7 @@ export {
   pointInPolygon,
   polygonArea,
   polygonCentroid,
+  roomBehindWall,
   roomConnections,
   roomWalls,
   signedArea,

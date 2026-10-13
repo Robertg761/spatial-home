@@ -1,0 +1,344 @@
+{
+  "format": "spatial-home/home-layout",
+  "version": 1,
+  "name": "Sample flat",
+  "site": {
+    "northBearing": 0
+  },
+  "floors": [
+    {
+      "id": "ground-floor",
+      "name": "Ground floor",
+      "level": 0,
+      "elevation": 0,
+      "ha": {
+        "floorId": "ground_floor"
+      }
+    }
+  ],
+  "rooms": [
+    {
+      "id": "living-room",
+      "name": "Living room",
+      "floorId": "ground-floor",
+      "outline": [
+        [0, 0],
+        [5, 0],
+        [5, 4],
+        [0, 4]
+      ],
+      "ceilingHeight": 2.6,
+      "ha": {
+        "areaId": "living_room"
+      }
+    },
+    {
+      "id": "kitchen",
+      "name": "Kitchen",
+      "floorId": "ground-floor",
+      "outline": [
+        [0, 4],
+        [5, 4],
+        [5, 8],
+        [0, 8]
+      ],
+      "ceilingHeight": 2.6,
+      "ha": {
+        "areaId": "kitchen"
+      }
+    },
+    {
+      "id": "hallway",
+      "name": "Hallway",
+      "floorId": "ground-floor",
+      "outline": [
+        [5, 0],
+        [7, 0],
+        [7, 8],
+        [5, 8]
+      ],
+      "ceilingHeight": 2.6,
+      "ha": {
+        "areaId": "hallway"
+      }
+    },
+    {
+      "id": "bathroom",
+      "name": "Bathroom",
+      "floorId": "ground-floor",
+      "outline": [
+        [7, 0],
+        [11, 0],
+        [11, 4],
+        [7, 4]
+      ],
+      "ceilingHeight": 2.6,
+      "ha": {
+        "areaId": "bathroom"
+      }
+    },
+    {
+      "id": "bedroom",
+      "name": "Bedroom",
+      "floorId": "ground-floor",
+      "outline": [
+        [7, 4],
+        [11, 4],
+        [11, 8],
+        [7, 8]
+      ],
+      "ceilingHeight": 2.6,
+      "ha": {
+        "areaId": "bedroom"
+      }
+    }
+  ],
+  "openings": [
+    {
+      "kind": "door",
+      "id": "front-door",
+      "name": "Front door",
+      "wall": {
+        "roomId": "hallway",
+        "index": 0
+      },
+      "offset": 1,
+      "width": 0.9,
+      "height": 2.1,
+      "connects": "outside"
+    },
+    {
+      "kind": "door",
+      "id": "living-room-door",
+      "wall": {
+        "roomId": "hallway",
+        "index": 3
+      },
+      "offset": 6,
+      "width": 0.8,
+      "height": 2.1,
+      "connects": "living-room"
+    },
+    {
+      "kind": "door",
+      "id": "kitchen-door",
+      "wall": {
+        "roomId": "hallway",
+        "index": 3
+      },
+      "offset": 2,
+      "width": 0.8,
+      "height": 2.1,
+      "connects": "kitchen"
+    },
+    {
+      "kind": "door",
+      "id": "bathroom-door",
+      "wall": {
+        "roomId": "hallway",
+        "index": 1
+      },
+      "offset": 2,
+      "width": 0.8,
+      "height": 2.1,
+      "connects": "bathroom"
+    },
+    {
+      "kind": "door",
+      "id": "bedroom-door",
+      "wall": {
+        "roomId": "hallway",
+        "index": 1
+      },
+      "offset": 6,
+      "width": 0.8,
+      "height": 2.1,
+      "connects": "bedroom"
+    },
+    {
+      "kind": "passage",
+      "id": "kitchen-arch",
+      "name": "Arch to the kitchen",
+      "wall": {
+        "roomId": "living-room",
+        "index": 2
+      },
+      "offset": 3,
+      "width": 1.4,
+      "height": 2.2,
+      "connects": "kitchen"
+    },
+    {
+      "kind": "window",
+      "id": "living-room-window",
+      "name": "Living room window",
+      "wall": {
+        "roomId": "living-room",
+        "index": 3
+      },
+      "offset": 2,
+      "width": 1.8,
+      "height": 1.4,
+      "connects": "outside",
+      "sillHeight": 0.8
+    },
+    {
+      "kind": "window",
+      "id": "bedroom-window",
+      "name": "Bedroom window",
+      "wall": {
+        "roomId": "bedroom",
+        "index": 1
+      },
+      "offset": 2,
+      "width": 1.4,
+      "height": 1.2,
+      "connects": "outside",
+      "sillHeight": 0.9
+    },
+    {
+      "kind": "window",
+      "id": "kitchen-window",
+      "name": "Kitchen window",
+      "wall": {
+        "roomId": "kitchen",
+        "index": 2
+      },
+      "offset": 2.5,
+      "width": 1.2,
+      "height": 1,
+      "connects": "outside",
+      "sillHeight": 1.1
+    }
+  ],
+  "fixtures": [
+    {
+      "id": "sofa",
+      "name": "Sofa",
+      "kind": "sofa",
+      "roomId": "living-room",
+      "position": [2.8, 0.6],
+      "size": {
+        "width": 2.2,
+        "depth": 0.9,
+        "height": 0.8
+      },
+      "rotation": 0
+    },
+    {
+      "id": "reading-chair",
+      "name": "Reading chair",
+      "kind": "armchair",
+      "roomId": "living-room",
+      "position": [0.8, 3.1],
+      "size": {
+        "width": 0.8,
+        "depth": 0.8,
+        "height": 1
+      },
+      "rotation": 135
+    },
+    {
+      "id": "bed",
+      "name": "Bed",
+      "kind": "bed",
+      "roomId": "bedroom",
+      "position": [9, 6.5],
+      "size": {
+        "width": 1.6,
+        "depth": 2,
+        "height": 0.5
+      },
+      "rotation": 0
+    },
+    {
+      "id": "desk",
+      "name": "Desk",
+      "kind": "desk",
+      "roomId": "bedroom",
+      "position": [10.4, 4.6],
+      "size": {
+        "width": 1.2,
+        "depth": 0.6,
+        "height": 0.75
+      },
+      "rotation": 90
+    }
+  ],
+  "devices": [
+    {
+      "id": "hallway-motion",
+      "name": "Hallway motion sensor",
+      "roomId": "hallway",
+      "position": [6, 7.9, 2.3],
+      "heading": 180,
+      "tilt": 30,
+      "coverage": [
+        {
+          "kind": "motion",
+          "range": 7,
+          "fieldOfView": 110
+        }
+      ],
+      "ha": {
+        "entityIds": [
+          "binary_sensor.hallway_motion",
+          "sensor.hallway_motion_battery"
+        ]
+      }
+    },
+    {
+      "id": "reading-lamp",
+      "name": "Reading lamp",
+      "roomId": "living-room",
+      "position": [0.4, 3.6, 1.5],
+      "coverage": [
+        {
+          "kind": "light",
+          "range": 2.5
+        }
+      ],
+      "ha": {
+        "entityIds": [
+          "light.reading_lamp"
+        ]
+      }
+    },
+    {
+      "id": "living-room-ceiling-light",
+      "name": "Living room ceiling light",
+      "roomId": "living-room",
+      "position": [2.5, 2, 2.55],
+      "coverage": [
+        {
+          "kind": "light",
+          "range": 4
+        }
+      ],
+      "ha": {
+        "entityIds": [
+          "light.living_room_ceiling"
+        ]
+      }
+    },
+    {
+      "id": "bedroom-presence",
+      "name": "Bedroom presence sensor",
+      "roomId": "bedroom",
+      "position": [7.1, 7.9, 2.2],
+      "heading": 135,
+      "coverage": [
+        {
+          "kind": "presence",
+          "range": 5,
+          "fieldOfView": 120
+        }
+      ],
+      "ha": {
+        "entityIds": [
+          "binary_sensor.bedroom_presence"
+        ]
+      }
+    }
+  ]
+}

@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@spatial-home/ha-client": "*",
+    "@spatial-home/home-model": "*",
     "expo": "~57.0.28",
     "expo-constants": "~57.0.21",
     "expo-linking": "~57.0.12",

@@ -3,3 +3,6 @@ package-lock.json
 *.md
 dist/
 .expo/
+# Written by the home-model package itself; tests check them against their writers.
+packages/home-model/schema/
+packages/home-model/examples/

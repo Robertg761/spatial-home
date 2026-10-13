@@ -1,20 +1,13 @@
 {
+  // Scripts run directly by Node. The apps and packages each have their own tsconfig.json.
+  "extends": "./tsconfig.base.json",
   "compilerOptions": {
     "target": "es2022",
     "lib": ["es2023", "dom"],
     "module": "nodenext",
     "moduleResolution": "nodenext",
     "types": ["node"],
-    "strict": true,
-    "noUncheckedIndexedAccess": true,
-    "exactOptionalPropertyTypes": true,
-    "noImplicitOverride": true,
-    "noEmit": true,
-    "allowImportingTsExtensions": true,
-    "erasableSyntaxOnly": true,
-    "verbatimModuleSyntax": true,
-    "isolatedModules": true,
-    "skipLibCheck": true
+    "erasableSyntaxOnly": true
   },
-  "include": ["packages/*/src", "packages/*/test", "scripts"]
+  "include": ["scripts"]
 }

@@ -1,0 +1,15 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "target": "es2022",
+    // dom for the WebSocket and timer types it shares with browsers; node for the tests.
+    "lib": ["es2023", "dom"],
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "types": ["node"],
+    "exactOptionalPropertyTypes": true,
+    // Node runs this package's TypeScript directly, which allows only syntax it can strip.
+    "erasableSyntaxOnly": true
+  },
+  "include": ["src", "test"]
+}

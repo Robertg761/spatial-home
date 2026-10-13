@@ -1,0 +1,14 @@
+{
+  // Settings every workspace shares. Each workspace's tsconfig.json adds what its runtime needs.
+  "compilerOptions": {
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "noEmit": true,
+    // Shared packages import their own files as ./file.ts, which Node, Vite and Metro all run as is.
+    "allowImportingTsExtensions": true,
+    "isolatedModules": true,
+    "verbatimModuleSyntax": true,
+    "skipLibCheck": true
+  }
+}

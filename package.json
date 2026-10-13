@@ -5,13 +5,17 @@
   "license": "Apache-2.0",
   "type": "module",
   "workspaces": [
+    "apps/*",
     "packages/*"
   ],
   "engines": {
     "node": ">=22.18"
   },
   "scripts": {
-    "typecheck": "tsc -p tsconfig.json",
+    "editor": "npm run dev -w @spatial-home/editor",
+    "mobile": "npm run start -w @spatial-home/mobile",
+    "build": "npm run build -w @spatial-home/editor",
+    "typecheck": "tsc -p tsconfig.json && npm run typecheck --workspaces --if-present",
     "test": "vitest run",
     "test:watch": "vitest",
     "format": "prettier --write .",
@@ -21,7 +25,7 @@
   "devDependencies": {
     "@types/node": "^22.20.5",
     "prettier": "^3.9.10",
-    "typescript": "^7.0.2",
+    "typescript": "~6.0.3",
     "vitest": "^5.0.4"
   }
 }

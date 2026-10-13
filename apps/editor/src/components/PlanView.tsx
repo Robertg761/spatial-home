@@ -81,12 +81,17 @@ export function PlanView({ state, dispatch, tool, flagged, onMessage, fitRequest
     return () => observer.disconnect();
   }, []);
 
-  // Fit the view to the floor when asked, and when the floor or the plan's size changes.
+  // Fit the view to the floor when asked and when the floor changes. Fit it again when the plan is
+  // resized, unless the user has panned or zoomed since, so a shrinking window doesn't clip it.
   const fitKey = `${fitRequest}:${floorId}`;
-  const lastFit = useRef('');
+  const lastFit = useRef({ key: '', width: 0, height: 0 });
+  const viewMoved = useRef(false);
   useEffect(() => {
-    if (lastFit.current === fitKey || size.width === 0) return;
-    lastFit.current = fitKey;
+    const last = lastFit.current;
+    const resized = size.width !== last.width || size.height !== last.height;
+    if (size.width === 0 || (last.key === fitKey && (viewMoved.current || !resized))) return;
+    lastFit.current = { key: fitKey, ...size };
+    viewMoved.current = false;
     setView(
       fitView(
         rooms.flatMap((room) => room.outline),
@@ -125,6 +130,7 @@ export function PlanView({ state, dispatch, tool, flagged, onMessage, fitRequest
     const onWheel = (event: WheelEvent) => {
       event.preventDefault();
       const point = toPlan(svg, event.clientX, event.clientY);
+      viewMoved.current = true;
       setView((current) => {
         const scale = clamp(current.scale * Math.exp(-event.deltaY * 0.0015), MIN_SCALE, MAX_SCALE);
         const ratio = current.scale / scale;
@@ -253,6 +259,7 @@ export function PlanView({ state, dispatch, tool, flagged, onMessage, fitRequest
     if (!current || current.pointerId !== event.pointerId) return;
     if (current.kind === 'pan') {
       const { startView, startClient } = current;
+      viewMoved.current = true;
       setView({
         ...startView,
         cx: startView.cx - (event.clientX - startClient[0]) / startView.scale,

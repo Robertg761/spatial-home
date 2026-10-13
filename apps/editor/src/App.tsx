@@ -10,7 +10,7 @@ import { Inspector } from './components/Inspector.tsx';
 import { IssuesPanel, selectionForIssue } from './components/IssuesPanel.tsx';
 import { PlanView, type Tool } from './components/PlanView.tsx';
 import { deleteItem } from './editor/plan.ts';
-import { editorReducer, initialState } from './editor/state.ts';
+import { editorReducer, initialState, isPristine } from './editor/state.ts';
 import { downloadLayout, loadDraft, saveDraft } from './editor/storage.ts';
 
 const TOOLS: { tool: Tool; label: string; key: string }[] = [
@@ -115,7 +115,7 @@ export function App() {
 
   const isEmpty = state.layout.rooms.length === 0;
   const confirmReplace = () =>
-    isEmpty || window.confirm('Replace the current layout? You can still save it first.');
+    isPristine(state) || window.confirm('Replace the current layout? You can still save it first.');
 
   return (
     <div className="app">

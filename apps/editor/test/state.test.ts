@@ -1,7 +1,7 @@
 import { createEmptyLayout } from '@spatial-home/home-model';
 import { describe, expect, test } from 'vitest';
-import { addRoom, deleteItem, moveRoom } from '../src/editor/plan.ts';
-import { editorReducer, initialState, type EditorState } from '../src/editor/state.ts';
+import { addOpening, addRoom, deleteItem, moveRoom, nearestWall } from '../src/editor/plan.ts';
+import { editorReducer, initialState, isPristine, type EditorState } from '../src/editor/state.ts';
 
 const square = [
   [0, 0],
@@ -83,5 +83,62 @@ describe('editorReducer', () => {
     const loaded = editorReducer(state, { type: 'load', layout: createEmptyLayout('Other') });
     expect(loaded.past).toEqual([]);
     expect(loaded.layout.name).toBe('Other');
+  });
+
+  test('selecting an item on another floor shows that floor', () => {
+    const empty = createEmptyLayout();
+    const twoFloors = {
+      ...empty,
+      floors: [...empty.floors, { id: 'first-floor', name: 'First floor', level: 1, elevation: 3 }],
+    };
+    const { layout: withRoom, id: roomId } = addRoom(twoFloors, 'first-floor', square);
+    const hit = nearestWall(withRoom, 'first-floor', [1.5, 0], 0.1)!;
+    const added = addOpening(withRoom, 'door', hit);
+    if ('error' in added) throw new Error(added.error);
+    const state = initialState(added.layout);
+    expect(state.floorId).toBe('ground-floor');
+
+    const room = editorReducer(state, { type: 'select', selection: { kind: 'room', id: roomId } });
+    expect(room.floorId).toBe('first-floor');
+    expect(room.selection).toEqual({ kind: 'room', id: roomId });
+
+    const opening = editorReducer(state, {
+      type: 'select',
+      selection: { kind: 'opening', id: added.id },
+    });
+    expect(opening.floorId).toBe('first-floor');
+    expect(opening.selection).toEqual({ kind: 'opening', id: added.id });
+  });
+});
+
+describe('isPristine', () => {
+  test('a new layout is pristine', () => {
+    expect(isPristine(initialState(createEmptyLayout()))).toBe(true);
+  });
+
+  test('a roomless layout with other changes is not', () => {
+    const empty = initialState(createEmptyLayout());
+    const named = editorReducer(empty, {
+      type: 'edit',
+      layout: { ...empty.layout, name: 'Home' },
+    });
+    expect(isPristine(named)).toBe(false);
+    // Even restored from a draft, with nothing to undo.
+    expect(isPristine(initialState(named.layout))).toBe(false);
+    expect(
+      isPristine(
+        initialState({ ...empty.layout, site: { ...empty.layout.site, northBearing: 90 } })
+      )
+    ).toBe(false);
+  });
+
+  test('an emptied layout is not, while there is work to undo', () => {
+    const { state, id } = withRoom();
+    const deleted = editorReducer(state, {
+      type: 'edit',
+      layout: deleteItem(state.layout, { kind: 'room', id }),
+    });
+    expect(deleted.layout.rooms).toHaveLength(0);
+    expect(isPristine(deleted)).toBe(false);
   });
 });

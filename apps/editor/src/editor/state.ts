@@ -1,4 +1,4 @@
-import type { HomeLayout } from '@spatial-home/home-model';
+import { createEmptyLayout, serializeLayout, type HomeLayout } from '@spatial-home/home-model';
 
 export type Selection = { kind: 'room' | 'opening'; id: string } | null;
 
@@ -95,8 +95,15 @@ export function editorReducer(state: EditorState, action: EditorAction): EditorS
       );
     }
 
-    case 'select':
-      return withSelection(state, action.selection);
+    case 'select': {
+      // Show the floor the item is on, as an issue can be about an item on another floor.
+      const floorId = selectionFloor(state.layout, action.selection);
+      const floorExists = state.layout.floors.some((floor) => floor.id === floorId);
+      return withSelection(
+        floorId && floorExists ? { ...state, floorId } : state,
+        action.selection
+      );
+    }
 
     case 'set-floor':
       return { ...state, floorId: action.floorId, selection: null };
@@ -104,6 +111,18 @@ export function editorReducer(state: EditorState, action: EditorAction): EditorS
     case 'load':
       return initialState(action.layout);
   }
+}
+
+/**
+ * Whether replacing the layout would lose nothing: it's the same as a new one, with nothing to undo
+ * or redo.
+ */
+export function isPristine(state: EditorState): boolean {
+  return (
+    state.past.length === 0 &&
+    state.future.length === 0 &&
+    serializeLayout(state.layout) === serializeLayout(createEmptyLayout())
+  );
 }
 
 function pushHistory(past: HomeLayout[], layout: HomeLayout): HomeLayout[] {
@@ -124,4 +143,13 @@ function withSelection(state: EditorState, selection: Selection): EditorState {
     selection: exists ? selection : null,
     floorId: floorExists ? state.floorId : (state.layout.floors[0]?.id ?? ''),
   };
+}
+
+function selectionFloor(layout: HomeLayout, selection: Selection): string | undefined {
+  if (!selection) return undefined;
+  const roomId =
+    selection.kind === 'room'
+      ? selection.id
+      : layout.openings.find((opening) => opening.id === selection.id)?.wall.roomId;
+  return layout.rooms.find((room) => room.id === roomId)?.floorId;
 }

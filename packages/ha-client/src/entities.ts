@@ -9,7 +9,10 @@ import type {
 } from './messages.ts';
 
 export interface EntityStoreOptions {
-  /** Follow only these entities instead of all of them. */
+  /**
+   * Follow only these entities instead of all of them. An empty list follows none: the store stays
+   * empty and sends nothing, since Home Assistant reads an empty filter as "every entity".
+   */
   entityIds?: string[];
   /**
    * How long to wait for the first snapshot after connecting. A large instance can take a while
@@ -63,6 +66,13 @@ export class EntityStore {
   constructor(connection: HomeAssistantConnection, options: EntityStoreOptions = {}) {
     this.#connection = connection;
     this.#snapshotTimeoutMs = options.snapshotTimeoutMs ?? DEFAULT_SNAPSHOT_TIMEOUT_MS;
+    if (options.entityIds?.length === 0) {
+      this.#awaitingSnapshot = false;
+      this.#hasSnapshot = true;
+      this.#unsubscribe = () => {};
+      this.#removeStartupTask = () => {};
+      return;
+    }
     this.#removeStartupTask = connection.addStartupTask((signal) => this.#waitForSnapshot(signal));
     this.#unsubscribe = connection.subscribe<EntitiesEvent>(
       options.entityIds
@@ -101,7 +111,9 @@ export class EntityStore {
   dispose(): void {
     this.#unsubscribe();
     this.#removeStartupTask();
-    this.#settleWaiter(new HomeAssistantError('Entity store disposed', 'aborted'));
+    // Resolved rather than rejected: a rejection would fail the connection's startup and drop a
+    // healthy socket, when the store only stopped needing the snapshot.
+    this.#settleWaiter();
     this.#listeners.clear();
   }
 

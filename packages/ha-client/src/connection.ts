@@ -150,6 +150,13 @@ interface Subscription {
   requestId: number | null;
 }
 
+/** The startup tasks run for one authenticated socket. */
+interface Startup {
+  socket: WebSocketLike;
+  ran: Set<StartupTask>;
+  pending: number;
+}
+
 type StateListener = (state: ConnectionState) => void;
 
 /**
@@ -190,6 +197,8 @@ export class HomeAssistantConnection {
    * or close() themselves, so code that notifies them checks this before carrying on.
    */
   #generation = 0;
+  /** The startup in progress while `syncing`. */
+  #startup: Startup | null = null;
 
   #state: ConnectionState = {
     status: 'idle',
@@ -362,11 +371,15 @@ export class HomeAssistantConnection {
   }
 
   /**
-   * Registers a task to run after every successful authentication; see StartupTask. Returns a
-   * function that removes it.
+   * Registers a task to run after every successful authentication; see StartupTask. A task added
+   * while `syncing` joins the startup in progress; one added while `connected` first runs on the
+   * next connection. Returns a function that removes it.
    */
   addStartupTask(task: StartupTask): () => void {
     this.#startupTasks.add(task);
+    if (this.#startup && this.#startup.socket === this.#socket) {
+      this.#runStartupTask(this.#startup, task);
+    }
     return () => {
       this.#startupTasks.delete(task);
     };
@@ -440,6 +453,7 @@ export class HomeAssistantConnection {
       this.#authenticated = false;
       this.#socketAbort?.abort(error);
       this.#socketAbort = null;
+      this.#startup = null;
       this.#resetSubscriptionState();
     }
     this.#rejectPending(socket, error);
@@ -646,28 +660,44 @@ export class HomeAssistantConnection {
     );
     for (const subscription of this.#subscriptions) this.#sendSubscription(subscription);
 
-    const signal = this.#socketAbort!.signal;
-    const tasks = [...this.#startupTasks].map((task) => {
-      try {
-        return task(signal);
-      } catch (error) {
-        return Promise.reject(error);
-      }
-    });
-    Promise.all(tasks).then(
+    const startup: Startup = { socket, ran: new Set(), pending: 0 };
+    this.#startup = startup;
+    for (const task of [...this.#startupTasks]) this.#runStartupTask(startup, task);
+    this.#finishStartupIfDone(startup);
+  }
+
+  #runStartupTask(startup: Startup, task: StartupTask): void {
+    if (startup.ran.has(task)) return;
+    startup.ran.add(task);
+    startup.pending += 1;
+    let result: Promise<void>;
+    try {
+      result = Promise.resolve(task(this.#socketAbort!.signal));
+    } catch (error) {
+      result = Promise.reject(error);
+    }
+    result.then(
       () => {
-        if (this.#socket !== socket || !this.#authenticated) return;
-        // The backoff starts over only once the client has live data. A server that accepts the
-        // login but can't deliver the first snapshot would otherwise be retried at the shortest
-        // delay every time.
-        this.#setState({ status: 'connected', attempt: 0 });
+        if (this.#startup !== startup) return;
+        startup.pending -= 1;
+        this.#finishStartupIfDone(startup);
       },
       (error: unknown) => {
-        if (this.#socket !== socket) return;
+        if (this.#startup !== startup) return;
         this.#log.warn('A startup task failed; reconnecting:', error);
-        this.#failConnection(socket, 'startup-failed', toError(error));
+        this.#failConnection(startup.socket, 'startup-failed', toError(error));
       }
     );
+  }
+
+  #finishStartupIfDone(startup: Startup): void {
+    if (this.#startup !== startup || startup.pending > 0) return;
+    if (this.#socket !== startup.socket || !this.#authenticated) return;
+    this.#startup = null;
+    // The backoff starts over only once the client has live data. A server that accepts the login
+    // but can't deliver the first snapshot would otherwise be retried at the shortest delay every
+    // time.
+    this.#setState({ status: 'connected', attempt: 0 });
   }
 
   // --- Requests ---
@@ -799,6 +829,8 @@ export class HomeAssistantConnection {
     }
     this.#state = next;
     for (const listener of [...this.#listeners]) {
+      // A listener changed the state again, and that change already reached every listener.
+      if (this.#state !== next) return;
       try {
         listener(next);
       } catch (error) {

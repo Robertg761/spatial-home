@@ -279,21 +279,6 @@ function Scanner() {
     setResult(importScan(buildScan(rooms), { name: 'My home' }));
   }, [rooms]);
 
-  if (result) {
-    return (
-      <Review
-        rooms={rooms}
-        result={result}
-        onScanMore={() => setResult(null)}
-        onStartOver={() => {
-          setResult(null);
-          setRooms([]);
-          setCorners([]);
-        }}
-      />
-    );
-  }
-
   const View3d = ArcoreScannerView!;
   const walls = wallLengths(corners, false);
 
@@ -302,72 +287,98 @@ function Scanner() {
       <View3d
         ref={scanner}
         style={StyleSheet.absoluteFill}
-        active
+        // Paused, not unmounted, while reviewing: a new AR session would start a new world, and
+        // the next room wouldn't line up with the ones already scanned.
+        active={!result}
         corners={corners}
-        onTrackingChange={(event) => setTracking(event.nativeEvent)}
+        onTrackingChange={(event) => {
+          setTracking(event.nativeEvent);
+          if (event.nativeEvent.state === 'tracking') setError(null);
+        }}
         onAim={(event) => setAim(event.nativeEvent)}
         onError={(event) => setError(event.nativeEvent)}
       />
 
-      <View pointerEvents="none" style={styles.crosshairBox}>
-        <View style={[styles.crosshair, aim?.onFloor && styles.crosshairOnFloor]} />
-        {aim?.onFloor && aim.fromLast !== undefined ? (
-          <Text style={styles.measure}>{formatDistance(aim.fromLast)}</Text>
-        ) : null}
-      </View>
-
-      <View style={[styles.top, { paddingTop: 12 }]}>
-        <Text style={styles.hint}>{error ? error.message : scanHint(tracking, aim, corners)}</Text>
-        <Text style={styles.progress}>
-          {rooms.length > 0 ? `${rooms.length} room${rooms.length === 1 ? '' : 's'} done · ` : ''}
-          {corners.length} corner{corners.length === 1 ? '' : 's'}
-          {walls.length > 0 ? ` · last wall ${formatDistance(walls.at(-1)!)}` : ''}
-        </Text>
-      </View>
-
-      <View style={[styles.panel, { paddingBottom: insets.bottom + 12 }]}>
-        <View style={styles.row}>
-          <TextInput
-            style={[styles.input, styles.grow]}
-            value={roomName}
-            onChangeText={setRoomName}
-            placeholder={placeholderName}
-            placeholderTextColor="#8a8f98"
+      {result ? (
+        <View style={styles.reviewSheet}>
+          <Review
+            rooms={rooms}
+            result={result}
+            onScanMore={() => setResult(null)}
+            onStartOver={() => {
+              setResult(null);
+              setRooms([]);
+              setCorners([]);
+            }}
           />
-          <TextInput
-            style={[styles.input, styles.ceiling]}
-            value={ceiling}
-            onChangeText={setCeiling}
-            keyboardType="decimal-pad"
-            accessibilityLabel="Ceiling height in metres"
-          />
-          <Text style={styles.unit}>m high</Text>
         </View>
-        <View style={styles.row}>
-          <Button
-            label="Undo"
-            kind="secondary"
-            disabled={corners.length === 0}
-            onPress={() => setCorners((current) => current.slice(0, -1))}
-          />
-          <Button
-            label="Add corner"
-            grow
-            disabled={busy || tracking?.state !== 'tracking'}
-            onPress={() => void placeCorner()}
-          />
-          {corners.length >= 3 ? (
-            <Button label="Close room" kind="secondary" onPress={() => closeRoom(corners)} />
-          ) : (
-            <Button
-              label="Done"
-              kind="secondary"
-              disabled={rooms.length === 0 || corners.length > 0}
-              onPress={finish}
-            />
-          )}
-        </View>
-      </View>
+      ) : (
+        <>
+          <View pointerEvents="none" style={styles.crosshairBox}>
+            <View style={[styles.crosshair, aim?.onFloor && styles.crosshairOnFloor]} />
+            {aim?.onFloor && aim.fromLast !== undefined ? (
+              <Text style={styles.measure}>{formatDistance(aim.fromLast)}</Text>
+            ) : null}
+          </View>
+
+          <View style={[styles.top, { paddingTop: 12 }]}>
+            <Text style={styles.hint}>
+              {error ? error.message : scanHint(tracking, aim, corners)}
+            </Text>
+            <Text style={styles.progress}>
+              {rooms.length > 0
+                ? `${rooms.length} room${rooms.length === 1 ? '' : 's'} done · `
+                : ''}
+              {corners.length} corner{corners.length === 1 ? '' : 's'}
+              {walls.length > 0 ? ` · last wall ${formatDistance(walls.at(-1)!)}` : ''}
+            </Text>
+          </View>
+
+          <View style={[styles.panel, { paddingBottom: insets.bottom + 12 }]}>
+            <View style={styles.row}>
+              <TextInput
+                style={[styles.input, styles.grow]}
+                value={roomName}
+                onChangeText={setRoomName}
+                placeholder={placeholderName}
+                placeholderTextColor="#8a8f98"
+              />
+              <TextInput
+                style={[styles.input, styles.ceiling]}
+                value={ceiling}
+                onChangeText={setCeiling}
+                keyboardType="decimal-pad"
+                accessibilityLabel="Ceiling height in metres"
+              />
+              <Text style={styles.unit}>m high</Text>
+            </View>
+            <View style={styles.row}>
+              <Button
+                label="Undo"
+                kind="secondary"
+                disabled={corners.length === 0}
+                onPress={() => setCorners((current) => current.slice(0, -1))}
+              />
+              <Button
+                label="Add corner"
+                grow
+                disabled={busy || tracking?.state !== 'tracking'}
+                onPress={() => void placeCorner()}
+              />
+              {corners.length >= 3 ? (
+                <Button label="Close room" kind="secondary" onPress={() => closeRoom(corners)} />
+              ) : (
+                <Button
+                  label="Done"
+                  kind="secondary"
+                  disabled={rooms.length === 0 || corners.length > 0}
+                  onPress={finish}
+                />
+              )}
+            </View>
+          </View>
+        </>
+      )}
     </View>
   );
 }
@@ -580,6 +591,7 @@ const styles = StyleSheet.create({
   buttonPressed: { opacity: 0.7 },
   buttonLabel: { color: '#fff', fontSize: 16, fontWeight: '600' },
   buttonLabelSecondary: { color: '#111' },
+  reviewSheet: { ...StyleSheet.absoluteFill, backgroundColor: '#fff' },
   review: { padding: 24, gap: 12 },
   roomRow: { paddingVertical: 8, borderBottomWidth: StyleSheet.hairlineWidth, borderColor: '#ccc' },
   roomName: { fontSize: 16, fontWeight: '600' },

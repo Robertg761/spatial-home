@@ -28,6 +28,8 @@ ARCore is declared optional, so the app still installs on phones without it. The
 
 Points are in ARCore's world frame: metres, y up, and the session's starting point as the origin. The room scan format uses the same frame.
 
+Every room in one scan has to come from one AR session, so they share that frame. The scan screen keeps the view mounted, and only pauses it, while showing the result. Leaving the screen ends the session, and ARCore may not keep the same origin after the app has been in the background.
+
 The camera permission is requested by the app, not the module.
 
 ## How it works

@@ -1,0 +1,27 @@
+{
+  "name": "spatial-home",
+  "private": true,
+  "description": "An interactive digital twin that gives smart homes an understanding of physical space",
+  "license": "Apache-2.0",
+  "type": "module",
+  "workspaces": [
+    "packages/*"
+  ],
+  "engines": {
+    "node": ">=22.18"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "ha:check": "node --env-file-if-exists=.env scripts/ha-check.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.5",
+    "prettier": "^3.9.10",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.4"
+  }
+}

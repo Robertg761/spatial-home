@@ -531,6 +531,49 @@ describe('startup tasks', () => {
     connection.close();
   });
 
+  test('include a task added while syncing', async () => {
+    const connection = createConnection();
+    let finishFirst!: () => void;
+    let finishLate!: () => void;
+    connection.addStartupTask(() => new Promise<void>((resolve) => (finishFirst = resolve)));
+    connection.connect();
+    await FakeSocket.latest.acceptAuth();
+    await flush();
+    expect(connection.status).toBe('syncing');
+
+    let lateRuns = 0;
+    connection.addStartupTask(() => {
+      lateRuns += 1;
+      return new Promise<void>((resolve) => (finishLate = resolve));
+    });
+    expect(lateRuns).toBe(1);
+    finishFirst();
+    await flush();
+    expect(connection.status).toBe('syncing');
+    finishLate();
+    await flush();
+    expect(connection.status).toBe('connected');
+    expect(lateRuns).toBe(1);
+    connection.close();
+  });
+
+  test('run a task added by a syncing listener once', async () => {
+    const connection = createConnection();
+    let runs = 0;
+    const task = async () => {
+      runs += 1;
+    };
+    connection.onStateChange((state) => {
+      if (state.status === 'syncing') connection.addStartupTask(task);
+    });
+    connection.connect();
+    await FakeSocket.latest.acceptAuth();
+    await flush();
+    expect(runs).toBe(1);
+    expect(connection.status).toBe('connected');
+    connection.close();
+  });
+
   test('receive a signal that aborts when the socket goes away', async () => {
     const connection = createConnection();
     let signal!: AbortSignal;
@@ -548,6 +591,18 @@ describe('startup tasks', () => {
 });
 
 describe('state changes', () => {
+  test('later listeners never receive a state that was already superseded', async () => {
+    const connection = createConnection();
+    connection.onStateChange((state) => {
+      if (state.status === 'connecting') connection.close();
+    });
+    const seen: string[] = [];
+    connection.onStateChange((state) => seen.push(state.status));
+    connection.connect();
+    expect(seen).toEqual(['closed']);
+    expect(connection.status).toBe('closed');
+  });
+
   test('a listener that closes on connecting stops the socket from opening', async () => {
     const connection = createConnection();
     connection.onStateChange((state) => {

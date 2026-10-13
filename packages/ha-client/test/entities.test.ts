@@ -205,6 +205,36 @@ describe('EntityStore', () => {
     connection.close();
   });
 
+  test('follows nothing, without subscribing, for an empty entity list', async () => {
+    const connection = createConnection();
+    const store = new EntityStore(connection, { entityIds: [] });
+    connection.connect();
+    await FakeSocket.latest.acceptAuth();
+    await flush();
+    // Home Assistant would read entity_ids: [] as every entity.
+    expect(FakeSocket.latest.sentOfType('subscribe_entities')).toHaveLength(0);
+    expect(connection.status).toBe('connected');
+    expect(store.hasSnapshot).toBe(true);
+    expect(store.size).toBe(0);
+    connection.close();
+  });
+
+  test('dispose() while syncing lets the connection finish instead of failing it', async () => {
+    const connection = createConnection();
+    const store = new EntityStore(connection);
+    connection.connect();
+    const socket = FakeSocket.latest;
+    await socket.acceptAuth();
+    await flush();
+    expect(connection.status).toBe('syncing');
+
+    store.dispose();
+    await flush();
+    expect(connection.status).toBe('connected');
+    expect(FakeSocket.latest).toBe(socket);
+    connection.close();
+  });
+
   test('dispose() unsubscribes and stops gating the connection', async () => {
     const connection = createConnection();
     const store = new EntityStore(connection);

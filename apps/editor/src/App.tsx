@@ -29,6 +29,7 @@ export function App() {
   const [tool, setTool] = useState<Tool>('select');
   const [message, setMessage] = useState('');
   const [fitRequest, setFitRequest] = useState(0);
+  const [drawing, setDrawing] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
   const [draftSaver] = useState(() => createDraftSaver());
 
@@ -142,8 +143,10 @@ export function App() {
   };
 
   const isEmpty = state.layout.rooms.length === 0;
+  // A room being drawn is work too, and replacing the layout would throw its corners away.
   const confirmReplace = () =>
-    isPristine(state) || window.confirm('Replace the current layout? You can still save it first.');
+    (isPristine(state) && !drawing) ||
+    window.confirm('Replace the current layout? You can still save it first.');
 
   return (
     <div className="app">
@@ -230,6 +233,7 @@ export function App() {
           flagged={flagged}
           onMessage={setMessage}
           fitRequest={fitRequest}
+          onDrawing={setDrawing}
         />
         {message && (
           <div className="toast" role="status">

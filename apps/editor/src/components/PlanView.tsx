@@ -54,9 +54,19 @@ interface PlanViewProps {
   onMessage: (message: string) => void;
   /** Changing this number fits the view to the floor. */
   fitRequest: number;
+  /** Told whether a room is being drawn, as its corners so far are kept only here. */
+  onDrawing: (drawing: boolean) => void;
 }
 
-export function PlanView({ state, dispatch, tool, flagged, onMessage, fitRequest }: PlanViewProps) {
+export function PlanView({
+  state,
+  dispatch,
+  tool,
+  flagged,
+  onMessage,
+  fitRequest,
+  onDrawing,
+}: PlanViewProps) {
   const { layout, floorId, selection } = state;
   const svgRef = useRef<SVGSVGElement>(null);
   const [size, setSize] = useState({ width: 800, height: 600 });
@@ -102,6 +112,8 @@ export function PlanView({ state, dispatch, tool, flagged, onMessage, fitRequest
 
   // Drafts belong to the room tool and the floor they were started on.
   useEffect(() => setDraft([]), [tool, floorId]);
+  const drawing = draft.length > 0;
+  useEffect(() => onDrawing(drawing), [drawing, onDrawing]);
 
   useEffect(() => {
     const keyDown = (event: KeyboardEvent) => {

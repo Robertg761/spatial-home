@@ -77,6 +77,14 @@ export function App() {
     };
   }, [draftSaver]);
 
+  // The corners of a room being drawn aren't saved with the draft, so ask before the page goes.
+  useEffect(() => {
+    if (!drawing) return;
+    const onBeforeUnload = (event: BeforeUnloadEvent) => event.preventDefault();
+    window.addEventListener('beforeunload', onBeforeUnload);
+    return () => window.removeEventListener('beforeunload', onBeforeUnload);
+  }, [drawing]);
+
   // Commit a field being typed in before any pointer press is handled. The browser would blur it
   // only after the press had changed the selection, and with it what the field edits.
   useEffect(() => {

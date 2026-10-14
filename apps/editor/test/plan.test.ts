@@ -283,6 +283,28 @@ describe('editing', () => {
     expect(uniqueIds(flat)).toEqual({ layout: flat, renamed: 0 });
   });
 
+  test('numbered ids stay within the longest an id can be, and unique', () => {
+    const long = 'a'.repeat(100);
+    const flat = sampleFlat();
+    const room = flat.rooms[0]!;
+    // Two rooms with the longest id, and a third whose id is what numbering would cut it to.
+    const layout: HomeLayout = {
+      ...flat,
+      rooms: [
+        ...flat.rooms,
+        { ...room, id: long },
+        { ...room, id: long },
+        { ...room, id: `${'a'.repeat(98)}-2` },
+      ],
+    };
+    expect(uniqueId(layout, long)).toBe(`${'a'.repeat(98)}-3`);
+    const { layout: fixed } = uniqueIds(layout);
+    const ids = fixed.rooms.map((r) => r.id);
+    expect(new Set(ids).size).toBe(ids.length);
+    expect(ids.every((id) => id.length <= 100)).toBe(true);
+    expect(errorCodes(fixed)).not.toContain('invalid-too-big');
+  });
+
   test('unique ids avoid every id in the layout and the reserved one', () => {
     const layout = sampleFlat();
     expect(uniqueId(layout, 'kitchen')).toBe('kitchen-2');

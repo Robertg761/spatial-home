@@ -4,6 +4,7 @@
 
 import {
   OUTSIDE,
+  RoomSchema,
   createEmptyLayout,
   distance,
   pointInPolygon,
@@ -17,6 +18,8 @@ import {
 } from '@spatial-home/home-model';
 
 export const GRID_STEP = 0.1;
+/** The longest an id can be, from the format itself. */
+const ID_MAX_LENGTH = RoomSchema.shape.id.maxLength ?? 100;
 export const DEFAULT_CEILING_HEIGHT = 2.5;
 
 export type OpeningKind = Opening['kind'];
@@ -364,7 +367,8 @@ export function deleteItem(
 /** An id based on `base` that no item in the layout uses yet. */
 export function uniqueId(layout: HomeLayout, base: string): string {
   const used = usedIds(layout);
-  return used.has(base) ? numbered(used, base) : base;
+  const id = base.slice(0, ID_MAX_LENGTH);
+  return used.has(id) ? numbered(used, id) : id;
 }
 
 /**
@@ -424,9 +428,12 @@ function usedIds(layout: HomeLayout): Set<string> {
   ]);
 }
 
+/** `base` with the first number that makes it unused, shortened to keep it within the limit. */
 function numbered(used: Set<string>, base: string): string {
   for (let n = 2; ; n++) {
-    if (!used.has(`${base}-${n}`)) return `${base}-${n}`;
+    const suffix = `-${n}`;
+    const id = base.slice(0, ID_MAX_LENGTH - suffix.length) + suffix;
+    if (!used.has(id)) return id;
   }
 }
 

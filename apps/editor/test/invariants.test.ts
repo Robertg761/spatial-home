@@ -118,7 +118,10 @@ class Run {
       (c, i) => corners.findIndex((d) => d[0] === c[0] && d[1] === c[1]) === i
     );
     if (unique.length < 3 || !isSimplePolygon(unique)) return;
-    const { layout, id } = addRoom(this.layout, this.state.floorId, unique);
+    // Sometimes a name as long as a name can be, which the room's id is made from.
+    const name =
+      this.random() < 0.2 ? 'Long room '.repeat(20).slice(0, NAME_MAX_LENGTH) : undefined;
+    const { layout, id } = addRoom(this.layout, this.state.floorId, unique, name);
     this.dispatch({ type: 'edit', layout, select: { kind: 'room', id } });
   }
 
@@ -399,18 +402,29 @@ function sampleFlat(): HomeLayout {
   return validateLayout(structuredClone(sample)).layout!;
 }
 
-/** The sample with ids used twice: by a floor and a room, two rooms, and two openings. */
+/**
+ * The sample with ids used twice: by a floor and a room, two rooms, two openings, and two rooms
+ * and two openings whose ids are as long as an id can be.
+ */
 function withDuplicateIds(): HomeLayout {
   const flat = sampleFlat();
   const kitchen = flat.rooms.find((room) => room.id === 'kitchen')!;
+  const shifted = (dx: number) => ({
+    ...kitchen,
+    outline: kitchen.outline.map(([x, y]) => [x + dx, y] as Point2),
+  });
+  const long = 'k'.repeat(100);
+  const door = { ...flat.openings[0]!, id: 'd'.repeat(100) };
   return {
     ...flat,
     floors: [...flat.floors, { id: 'hallway', name: 'Loft', level: 1, elevation: 3 }],
     rooms: [
       ...flat.rooms,
-      { ...kitchen, outline: kitchen.outline.map(([x, y]) => [x - 5, y] as Point2) },
+      shifted(-5),
+      { ...shifted(-10), id: long },
+      { ...shifted(-15), id: long },
     ],
-    openings: [...flat.openings, { ...flat.openings[0]! }],
+    openings: [...flat.openings, { ...flat.openings[0]! }, door, door],
   };
 }
 

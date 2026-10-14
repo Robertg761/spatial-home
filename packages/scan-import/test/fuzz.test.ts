@@ -204,12 +204,58 @@ function room(random: Random, north: number, floor: number) {
   };
 }
 
+/**
+ * Two rooms of the same name with no gap between them, each seeing the opening between them at
+ * exactly the same place, as tapped corners on a shared wall can give.
+ */
+function twins(random: Random, north: number, floor: number) {
+  const [x, y] = [random.between(-20, 20), random.between(-20, 20)];
+  const [w, v, h] = [random.between(1, 6), random.between(1, 6), random.between(1.5, 6)];
+  const kind = random.pick(['door', 'window', 'opening'] as const);
+  const along = random.between(0.6, h - 0.6);
+  const sighting = (seen: 'door' | 'window' | 'opening') => ({
+    kind: seen,
+    center: toWorld([x + w, y + along], floor + 1, north),
+    width: random.between(0.8, 0.9),
+    height: random.pick([1, 1.1]),
+  });
+  const name = random.pick(names);
+  const twin = (corners: Point2[], seen: 'door' | 'window' | 'opening') => ({
+    name,
+    outline: corners.map((point) => toWorld(point, floor, north)),
+    openings: [sighting(seen)],
+  });
+  const other = kind === 'window' ? 'window' : random.pick(['door', 'opening'] as const);
+  return [
+    twin(
+      [
+        [x, y],
+        [x + w, y],
+        [x + w, y + h],
+        [x, y + h],
+      ],
+      kind
+    ),
+    twin(
+      [
+        [x + w, y],
+        [x + w + v, y],
+        [x + w + v, y + h],
+        [x + w, y + h],
+      ],
+      other
+    ),
+  ];
+}
+
 function scan(random: Random): ScanSessionInput {
   const north = random.between(0, 359.9);
   const storeys = random.pick([[0], [0], [0, 2.8], [0, 0.02, 1.4, 2.8], [-2.6, 0, 3.1]]);
-  const rooms = Array.from({ length: 1 + Math.floor(random.next() * 4) }, () =>
-    room(random, north, random.pick(storeys) + random.between(-0.03, 0.03))
+  const rooms: ScanSessionInput['rooms'] = Array.from(
+    { length: 1 + Math.floor(random.next() * 4) },
+    () => room(random, north, random.pick(storeys) + random.between(-0.03, 0.03))
   );
+  if (random.chance(0.2)) rooms.push(...twins(random, north, random.pick(storeys)));
   return session(rooms, random.chance(0.7) ? north : undefined);
 }
 

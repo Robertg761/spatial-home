@@ -294,6 +294,41 @@ describe('rooms on several storeys', () => {
   test.each([
     ['first', [0, 1]],
     ['second', [1, 0]],
+  ])('keeps the same sighting of a door between two same-named rooms, scanned %s', (_, order) => {
+    // Two bedrooms with no gap between them, each seeing the door between them at exactly the
+    // same place: the west one a door 0.8 m wide, the east one a doorway 0.9 m wide.
+    const east = bedroom.map(([x, y]): Point2 => [x + 4, y]);
+    const rooms = [
+      {
+        name: 'Bedroom',
+        outline: bedroom.map((point) => toWorld(point, 0, 0)),
+        openings: [
+          { kind: 'door' as const, center: toWorld([4, 1.5], 1, 0), width: 0.8, height: 2 },
+        ],
+      },
+      {
+        name: 'Bedroom',
+        outline: east.map((point) => toWorld(point, 0, 0)),
+        openings: [
+          { kind: 'opening' as const, center: toWorld([4, 1.5], 1, 0), width: 0.9, height: 2 },
+        ],
+      },
+    ];
+    const { layout } = imported(importScan(session(order.map((i) => rooms[i]!))));
+    const [door] = layout.openings;
+    const room = layout.rooms.find((candidate) => candidate.id === door!.wall.roomId)!;
+    expect(layout.openings).toHaveLength(1);
+    // The sighting of the door itself, from the west bedroom, in either order.
+    expect([door!.kind, door!.width, Math.min(...room.outline.map(([x]) => x))]).toEqual([
+      'door',
+      0.8,
+      0,
+    ]);
+  });
+
+  test.each([
+    ['first', [0, 1]],
+    ['second', [1, 0]],
   ])('keeps furniture in its own room where rooms overlap, scanned %s', (_, order) => {
     // The study's scan drifted 5 cm into the bedroom, and a desk against the wall between them
     // is inside both.

@@ -181,6 +181,24 @@ describe('several rooms in one session', () => {
     ]);
   });
 
+  test('pairs each sighting of an opening with only one from the other room', () => {
+    // Two narrow windows side by side, of which the bedroom saw only one.
+    const scan = twoRooms();
+    const window = (at: Point2) => ({
+      kind: 'window' as const,
+      center: toWorld(at, 1.5, NORTH),
+      width: 0.3,
+      height: 1,
+    });
+    scan.rooms[0]!.openings = [window([4, 1.8])];
+    scan.rooms[1]!.openings = [window([4.15, 1.8]), window([4.15, 2.3])];
+    const { layout } = imported(importScan(scan));
+    expect(layout.openings.map((opening) => [opening.wall.roomId, opening.connects])).toEqual([
+      ['bedroom', 'hallway'],
+      ['hallway', 'bedroom'],
+    ]);
+  });
+
   test.each([
     ['a window', 'window', 'window'],
     ['a narrower doorway', 'opening', 'passage'],
@@ -394,6 +412,35 @@ describe('imperfect scans', () => {
     walls.push({ start: toWorld([5, 0], 0, 0), end: toWorld([4.4, 0.6], 0, 0), height: 1 });
     const result = imported(importScan(session([{ name: 'Kitchen', walls }])));
     expectOutline(result.layout.rooms[0]!.outline, l, 0.05);
+    expect(result.notes.map((note) => note.message)).toEqual(
+      expect.arrayContaining([expect.stringContaining('left out 1 wall piece')])
+    );
+  });
+
+  test('takes the room around the walls, not a column inside it with more pieces', () => {
+    const walls = wallsAround(bedroom, 2.4, 0);
+    // A six-sided column, 40 cm across, in the middle of the room.
+    const column = Array.from({ length: 6 }, (_, i): Point2 => {
+      const angle = (i * Math.PI) / 3;
+      return [2 + 0.2 * Math.cos(angle), 1.5 + 0.2 * Math.sin(angle)];
+    });
+    column.forEach((start, i) => {
+      const end = column[(i + 1) % column.length]!;
+      walls.push({ start: toWorld(start, 0, 0), end: toWorld(end, 0, 0), height: 2.4 });
+    });
+    const result = imported(importScan(session([{ name: 'Study', walls }])));
+    expectOutline(result.layout.rooms[0]!.outline, bedroom);
+    expect(result.notes.map((note) => note.message)).toEqual(
+      expect.arrayContaining([expect.stringContaining('left out 6 wall pieces')])
+    );
+  });
+
+  test('leaves out a wall with no length', () => {
+    const walls = wallsAround(bedroom, 2.4, 0);
+    walls.push({ start: toWorld([4, 3], 0, 0), end: toWorld([4, 3], 0, 0), height: 2.4 });
+    const result = imported(importScan(session([{ name: 'Study', walls }])));
+    expectOutline(result.layout.rooms[0]!.outline, bedroom);
+    expect(result.validation.ok).toBe(true);
     expect(result.notes.map((note) => note.message)).toEqual(
       expect.arrayContaining([expect.stringContaining('left out 1 wall piece')])
     );

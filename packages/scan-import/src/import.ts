@@ -227,6 +227,15 @@ function buildLayout(session: ScanSession, options: ImportOptions): ImportResult
       // wall as validation measures it (the outline is already rounded). An opening as wide as
       // the wall is narrowed to an even number of centimetres so that it can be centred.
       const width = Math.min(round(scanned.width), round(2 * round(hit.length / 2, 0.01, 'down')));
+      if (!hasSize(width)) {
+        // Tidying keeps walls longer than this, so this is only a guard.
+        notes.push({
+          severity: 'warning',
+          message: `${target.name}: left out a ${scanned.kind} on a wall too short to hold it.`,
+          room: room.index,
+        });
+        return;
+      }
       const offset = clamp(
         round(hit.offset),
         round(width / 2, 0.01, 'up'),
@@ -506,26 +515,24 @@ function corner(first: Segment, second: Segment): Point2 {
   return distance(intersection, meeting) > 1 ? meeting : intersection;
 }
 
-/** Removes repeated corners and corners on a straight wall, which scans produce plenty of. */
+/**
+ * Removes repeated corners and corners on a straight wall, which scans produce plenty of, one at a
+ * time until none are left: taking a corner away can bring two others close, and no wall may end
+ * up 2 cm long or less. Fewer than three corners left is no room at all.
+ */
 function tidyOutline(outline: Point2[]): Point2[] {
-  let points = outline.filter(
-    (point, i) => distance(point, outline[(i + 1) % outline.length]!) > 0.02
-  );
-  let changed = true;
-  while (changed && points.length > 3) {
-    changed = false;
-    for (let i = 0; i < points.length; i++) {
-      const previous = points[(i - 1 + points.length) % points.length]!;
-      const current = points[i]!;
-      const next = points[(i + 1) % points.length]!;
-      if (distanceToLine(current, previous, next) < 0.02) {
-        points = points.filter((_, j) => j !== i);
-        changed = true;
-        break;
-      }
+  let points = outline;
+  for (;;) {
+    const n = points.length;
+    if (n < 3) return points;
+    const around = (i: number) => [points[(i - 1 + n) % n]!, points[(i + 1) % n]!] as const;
+    let remove = points.findIndex((point, i) => distance(point, around(i)[1]) <= 0.02);
+    if (remove < 0 && n > 3) {
+      remove = points.findIndex((point, i) => distanceToLine(point, ...around(i)) < 0.02);
     }
+    if (remove < 0) return points;
+    points = points.filter((_, j) => j !== remove);
   }
-  return points;
 }
 
 /**

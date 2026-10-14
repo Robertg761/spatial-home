@@ -81,6 +81,19 @@ npm run ha:check     # connect to your own Home Assistant (see .env.example)
 
 In `apps/mobile`, add dependencies with `npx expo install <package>` rather than `npm install`, so they match the Expo SDK.
 
+The root also declares `expo`, `expo-router`, `react`, and `react-dom` as development
+dependencies, matching the apps' versions. This keeps Expo Router reachable by the
+root-installed Expo CLI when it generates typed routes. Keep these declarations in
+sync when upgrading Expo or React. App dependencies still belong in the app's own
+`package.json`; these root declarations support the shared development tooling.
+The root overrides keep Router's transitive gesture and animation libraries on
+the versions listed in Expo's `bundledNativeModules.json`. Update those alongside
+the Expo SDK to avoid incompatible native modules being selected automatically.
+
+CI generates mobile route types with `npx expo customize tsconfig.json` from
+`apps/mobile` before typechecking. This also checks that Expo's route generator can
+resolve its dependencies after a clean install.
+
 ## License
 
 Licensed under the [Apache License 2.0](LICENSE).

@@ -11,7 +11,7 @@ import { IssuesPanel, selectionForIssue } from './components/IssuesPanel.tsx';
 import { PlanView, type Tool } from './components/PlanView.tsx';
 import { deleteItem } from './editor/plan.ts';
 import { editorReducer, initialState, isPristine } from './editor/state.ts';
-import { downloadLayout, loadDraft, saveDraft } from './editor/storage.ts';
+import { createDraftSaver, downloadLayout, loadDraft } from './editor/storage.ts';
 
 const TOOLS: { tool: Tool; label: string; key: string }[] = [
   { tool: 'select', label: 'Select', key: 'V' },
@@ -29,6 +29,7 @@ export function App() {
   const [message, setMessage] = useState('');
   const [fitRequest, setFitRequest] = useState(0);
   const fileInput = useRef<HTMLInputElement>(null);
+  const [draftSaver] = useState(() => createDraftSaver());
 
   const validation = useMemo(() => validateLayout(state.layout), [state.layout]);
   const issues = useMemo(
@@ -44,11 +45,22 @@ export function App() {
     return map;
   }, [issues, state.layout]);
 
-  // Save the draft shortly after each change rather than on every drag step.
+  // Save the draft shortly after each change rather than on every drag step, and at once when the
+  // page is closed or hidden, as it may not get another chance.
+  useEffect(() => draftSaver.save(state.layout), [draftSaver, state.layout]);
   useEffect(() => {
-    const timer = setTimeout(() => saveDraft(state.layout), 400);
-    return () => clearTimeout(timer);
-  }, [state.layout]);
+    const flush = () => draftSaver.flush();
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') flush();
+    };
+    window.addEventListener('pagehide', flush);
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    return () => {
+      window.removeEventListener('pagehide', flush);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+      flush();
+    };
+  }, [draftSaver]);
 
   useEffect(() => {
     if (!message) return;

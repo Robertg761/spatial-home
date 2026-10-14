@@ -25,6 +25,33 @@ export function saveDraft(layout: HomeLayout): void {
   }
 }
 
+export interface DraftSaver {
+  /** Saves the layout once changes have stopped for a moment, rather than on every drag step. */
+  save(layout: HomeLayout): void;
+  /** Saves a waiting change now, such as when the page is closing. */
+  flush(): void;
+}
+
+export function createDraftSaver(write = saveDraft, delay = 400): DraftSaver {
+  let pending: HomeLayout | null = null;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const flush = () => {
+    clearTimeout(timer);
+    if (!pending) return;
+    const layout = pending;
+    pending = null;
+    write(layout);
+  };
+  return {
+    save(layout) {
+      pending = layout;
+      clearTimeout(timer);
+      timer = setTimeout(flush, delay);
+    },
+    flush,
+  };
+}
+
 /** Offers the layout as a home-layout.json download. */
 export function downloadLayout(layout: HomeLayout): void {
   const blob = new Blob([serializeLayout(layout)], { type: 'application/json' });

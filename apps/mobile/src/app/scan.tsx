@@ -33,6 +33,7 @@ import {
   buildScan,
   crossesItself,
   floorArea,
+  MIN_ROOM_AREA,
   wallLengths,
   type CapturedRoom,
 } from '../scan/guided.ts';
@@ -234,6 +235,13 @@ function Scanner() {
     (roomCorners: Vector3[]) => {
       if (roomCorners.length < 3) {
         Alert.alert('Not a room yet', 'A room needs at least three corners.');
+        return;
+      }
+      if (floorArea(roomCorners) < MIN_ROOM_AREA) {
+        Alert.alert(
+          'Not a room yet',
+          'These corners hardly enclose any floor. Undo and place them where the walls meet the floor.'
+        );
         return;
       }
       if (crossesItself(roomCorners)) {

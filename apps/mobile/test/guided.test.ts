@@ -5,6 +5,7 @@ import {
   addCorner,
   buildScan,
   crossesItself,
+  MIN_ROOM_AREA,
   floorArea,
   wallLengths,
   type CapturedRoom,
@@ -60,4 +61,15 @@ test('a guided capture imports as a valid layout', () => {
   expect(result.validation.ok).toBe(true);
   expect(result.layout.rooms[0]).toMatchObject({ name: 'Bedroom', ceilingHeight: 2.4 });
   expect(result.layout.rooms[0]!.outline).toHaveLength(4);
+});
+
+test('a room whose corners are in a line is caught before import, which would refuse it', () => {
+  const inLine: Vector3[] = [
+    [0, -1.3, 0],
+    [2, -1.3, 0],
+    [4, -1.3, 0],
+  ];
+  expect(floorArea(inLine)).toBeLessThan(MIN_ROOM_AREA);
+  const result = importScan(buildScan([{ name: 'Hall', corners: inLine, ceilingHeight: 2.4 }]));
+  expect(result.ok).toBe(false);
 });

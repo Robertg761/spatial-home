@@ -6,6 +6,8 @@ import type { ScanSessionInput, Vector3 } from '@spatial-home/scan-import';
 export const CLOSE_DISTANCE = 0.25;
 /** Corners closer together than this are the same corner tapped twice. */
 export const MIN_WALL = 0.1;
+/** Floor area, in square metres, below which a room is a mistake rather than a cupboard. */
+export const MIN_ROOM_AREA = 0.5;
 
 export interface CapturedRoom {
   name: string;

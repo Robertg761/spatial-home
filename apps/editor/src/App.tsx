@@ -12,7 +12,13 @@ import { IssuesPanel, selectionForIssue } from './components/IssuesPanel.tsx';
 import { PlanView, type Tool } from './components/PlanView.tsx';
 import { deleteItem, uniqueIds } from './editor/plan.ts';
 import { editorReducer, initialState, isPristine } from './editor/state.ts';
-import { createDraftSaver, downloadLayout, loadDraft } from './editor/storage.ts';
+import {
+  createDraftSaver,
+  download,
+  downloadLayout,
+  loadDraft,
+  unreadableDraft,
+} from './editor/storage.ts';
 
 const TOOLS: { tool: Tool; label: string; key: string }[] = [
   { tool: 'select', label: 'Select', key: 'V' },
@@ -23,9 +29,12 @@ const TOOLS: { tool: Tool; label: string; key: string }[] = [
 ];
 
 export function App() {
+  const [restored] = useState(loadDraft);
   const [state, dispatch] = useReducer(editorReducer, undefined, () =>
-    initialState(loadDraft() ?? createEmptyLayout())
+    initialState(restored.layout ?? createEmptyLayout())
   );
+  // Why the draft kept in this browser couldn't be opened, until the notice is dismissed.
+  const [unreadable, setUnreadable] = useState(restored.problem ?? '');
   const [tool, setTool] = useState<Tool>('select');
   const [message, setMessage] = useState('');
   const [fitRequest, setFitRequest] = useState(0);
@@ -129,8 +138,16 @@ export function App() {
   const openRequest = useRef(0);
   const openFile = async (file: File) => {
     const request = ++openRequest.current;
-    const result = parseLayoutJson(await file.text());
+    let text: string;
+    try {
+      text = await file.text();
+    } catch (error) {
+      if (request !== openRequest.current) return;
+      setMessage(`Couldn't read ${file.name}: ${error instanceof Error ? error.message : error}`);
+      return;
+    }
     if (request !== openRequest.current) return;
+    const result = parseLayoutJson(text);
     if (result.layout) {
       if (!confirmReplace()) return;
       const { layout, renamed } = uniqueIds(result.layout);
@@ -256,6 +273,26 @@ export function App() {
         {message && (
           <div className="toast" role="status">
             {message}
+          </div>
+        )}
+        {unreadable && (
+          <div className="notice" role="alert">
+            <p>
+              The layout kept in this browser couldn't be opened ({unreadable}), so this is a new
+              one. The old one is kept aside: download it to fix it, then open it.
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                const text = unreadableDraft();
+                if (text) download(text, 'unopened-layout.json');
+              }}
+            >
+              Download it
+            </button>
+            <button type="button" onClick={() => setUnreadable('')}>
+              Dismiss
+            </button>
           </div>
         )}
         {isEmpty && tool === 'select' && (

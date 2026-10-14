@@ -1,4 +1,5 @@
 import {
+  NAME_MAX_LENGTH,
   OUTSIDE,
   openingFacing,
   polygonArea,
@@ -15,6 +16,7 @@ import {
   updateRoom,
   type OpeningKind,
 } from '../editor/plan.ts';
+import { NUMBER_LIMITS, numberToCommit, textToCommit } from '../editor/fields.ts';
 import type { EditorAction, EditorState } from '../editor/state.ts';
 import { formatArea, formatLength } from './PlanView.tsx';
 
@@ -66,8 +68,7 @@ function HomeInspector({
         unit="°"
         hint="The compass bearing the top of the plan faces. 0 means north is up."
         value={layout.site.northBearing}
-        min={0}
-        max={359.9}
+        {...NUMBER_LIMITS.northBearing}
         onCommit={(northBearing) =>
           edit({ ...layout, site: { ...layout.site, northBearing: northBearing % 360 } })
         }
@@ -120,8 +121,7 @@ function RoomInspector({
         label="Ceiling height"
         unit="m"
         value={room.ceilingHeight}
-        min={0.5}
-        max={20}
+        {...NUMBER_LIMITS.ceilingHeight}
         step={0.05}
         onCommit={(ceilingHeight) => edit(updateRoom(layout, room.id, { ceilingHeight }))}
       />
@@ -219,8 +219,7 @@ function OpeningInspector({
         label="Width"
         unit="m"
         value={opening.width}
-        min={0.1}
-        max={20}
+        {...NUMBER_LIMITS.width}
         step={0.05}
         onCommit={(width) => change({ width })}
       />
@@ -228,8 +227,7 @@ function OpeningInspector({
         label="Height"
         unit="m"
         value={opening.height}
-        min={0.1}
-        max={10}
+        {...NUMBER_LIMITS.height}
         step={0.05}
         onCommit={(height) => change({ height })}
       />
@@ -238,8 +236,7 @@ function OpeningInspector({
           label="Sill height"
           unit="m"
           value={opening.sillHeight}
-          min={0}
-          max={10}
+          {...NUMBER_LIMITS.sillHeight}
           step={0.05}
           onCommit={(sillHeight) => change({ sillHeight })}
         />
@@ -323,18 +320,16 @@ function TextField({
   const [text, setText] = useState(value);
   useEffect(() => setText(value), [value]);
   const commit = () => {
-    const trimmed = text.trim();
-    if (trimmed === value || (required && !trimmed)) {
-      setText(value);
-      return;
-    }
-    onCommit(trimmed);
+    const committed = textToCommit(text, value, { required });
+    if (committed === null) setText(value);
+    else onCommit(committed);
   };
   return (
     <Field label={label} hint={hint}>
       <input
         type="text"
         value={text}
+        maxLength={NAME_MAX_LENGTH}
         onChange={(event) => setText(event.target.value)}
         onBlur={commit}
         onKeyDown={(event) => event.key === 'Enter' && event.currentTarget.blur()}
@@ -365,12 +360,9 @@ function NumberField({
   const [text, setText] = useState(String(value));
   useEffect(() => setText(String(value)), [value]);
   const commit = () => {
-    const parsed = Number(text);
-    if (text.trim() === '' || !Number.isFinite(parsed) || parsed < min || parsed > max) {
-      setText(String(value));
-      return;
-    }
-    if (parsed !== value) onCommit(parsed);
+    const committed = numberToCommit(text, value, { min, max });
+    if (committed === null) setText(String(value));
+    else onCommit(committed);
   };
   return (
     <Field label={label} hint={hint}>

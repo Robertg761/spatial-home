@@ -359,6 +359,28 @@ kbd {
   max-width: 80%;
 }
 
+/* Below where a toast appears, so one doesn't hide the other. */
+.notice {
+  position: absolute;
+  top: 60px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  max-width: min(560px, 90%);
+  padding: 10px 14px;
+  background: var(--panel);
+  border: 1px solid var(--warning);
+  border-radius: 6px;
+}
+
+.notice p {
+  margin: 0;
+  flex-basis: 100%;
+}
+
 .empty-state {
   position: absolute;
   top: 40%;

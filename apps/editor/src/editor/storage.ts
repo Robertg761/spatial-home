@@ -1,18 +1,37 @@
 import { parseLayoutJson, serializeLayout, type HomeLayout } from '@spatial-home/home-model';
 
 const DRAFT_KEY = 'spatial-home.editor.draft';
+/** Where a draft that couldn't be read is set aside, so saving the next one doesn't lose it. */
+const UNREADABLE_KEY = 'spatial-home.editor.unreadable-draft';
 
 /**
  * The layout being edited, kept in this browser between visits. A layout describes a real home, so
- * it stays on this device; nothing is uploaded.
+ * it stays on this device; nothing is uploaded. A draft with problems still comes back, for them
+ * to be fixed. One that can't be read as a layout at all is set aside, with the reason.
  */
-export function loadDraft(): HomeLayout | null {
+export function loadDraft(): { layout: HomeLayout | null; problem?: string } {
   try {
     const text = localStorage.getItem(DRAFT_KEY);
-    if (!text) return null;
-    return parseLayoutJson(text).layout ?? null;
+    if (!text) return { layout: null };
+    const result = parseLayoutJson(text);
+    if (result.layout) return { layout: result.layout };
+    localStorage.setItem(UNREADABLE_KEY, text);
+    const first = result.ok ? undefined : result.errors[0];
+    return {
+      layout: null,
+      problem: `${first?.path.length ? `${first.path.join('.')}: ` : ''}${first?.message ?? 'not a layout'}`,
+    };
   } catch {
     // Storage can be unavailable, such as in a private window.
+    return { layout: null };
+  }
+}
+
+/** The text of the last draft that couldn't be read, if there was one. */
+export function unreadableDraft(): string | null {
+  try {
+    return localStorage.getItem(UNREADABLE_KEY);
+  } catch {
     return null;
   }
 }
@@ -54,11 +73,15 @@ export function createDraftSaver(write = saveDraft, delay = 400): DraftSaver {
 
 /** Offers the layout as a home-layout.json download. */
 export function downloadLayout(layout: HomeLayout): void {
-  const blob = new Blob([serializeLayout(layout)], { type: 'application/json' });
+  download(serializeLayout(layout), 'home-layout.json');
+}
+
+export function download(text: string, fileName: string): void {
+  const blob = new Blob([text], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = url;
-  link.download = 'home-layout.json';
+  link.download = fileName;
   link.click();
   setTimeout(() => URL.revokeObjectURL(url), 0);
 }

@@ -2,6 +2,7 @@
 // editor never breaks a layout in a way it can't repair. Seeded, so a failure always reproduces.
 
 import {
+  NAME_MAX_LENGTH,
   OUTSIDE,
   createEmptyLayout,
   isSimplePolygon,
@@ -27,7 +28,9 @@ import {
   updateOpening,
   updateRoom,
   type OpeningKind,
+  type OpeningPatch,
 } from '../src/editor/plan.ts';
+import { NUMBER_LIMITS, numberToCommit, textToCommit } from '../src/editor/fields.ts';
 import { editorReducer, initialState, type EditorState } from '../src/editor/state.ts';
 
 /** Errors the editor has no way to repair, so no edit may introduce them. */
@@ -184,50 +187,124 @@ class Run {
     });
   }
 
-  /** The changes the opening inspector can make, within its fields' limits. */
+  /** What someone might type into a text field, including far too much. */
+  text(): string {
+    return this.pick([
+      '',
+      '   ',
+      'Kitchen',
+      '  Front door ',
+      'Küche 🏠',
+      'x'.repeat(this.int(2 * NAME_MAX_LENGTH)),
+      ` ${'y'.repeat(NAME_MAX_LENGTH)} `,
+    ])!;
+  }
+
+  /** What someone might type into a number field, including nonsense and extremes. */
+  numberText(): string {
+    return this.pick([
+      '',
+      'abc',
+      'NaN',
+      'Infinity',
+      '-1',
+      '0',
+      '1e9',
+      '0.05',
+      String(Math.round((this.random() * 60 - 20) * 100) / 100),
+    ])!;
+  }
+
+  /** The changes the opening inspector can make, through its fields. */
   updateOpening() {
     const opening = this.pick(this.openingsHere());
     if (!opening) return;
     const room = this.layout.rooms.find((r) => r.id === opening.wall.roomId)!;
     const wall = roomWalls(room)[opening.wall.index];
     this.dispatch({ type: 'select', selection: { kind: 'opening', id: opening.id } });
-    let layout: HomeLayout;
-    switch (this.int(5)) {
+    let patch: OpeningPatch | null = null;
+    switch (this.int(7)) {
       case 0: {
         const others = this.roomsHere().filter((other) => other.id !== room.id);
         const connects = this.pick([OUTSIDE, ...others.map((other) => other.id)])!;
         if (connects !== opening.connects) this.handSet.add(opening.id);
-        layout = updateOpening(this.layout, opening.id, { connects });
+        patch = { connects };
         break;
       }
-      case 1:
-        layout = updateOpening(this.layout, opening.id, {
-          offset: Math.round(this.random() * (wall?.length ?? 100) * 20) / 20,
-        });
+      case 1: {
+        const limits = { min: 0, max: wall?.length ?? 100 };
+        const offset = numberToCommit(this.numberText(), opening.offset, limits);
+        if (offset !== null) patch = { offset };
         break;
-      case 2:
-        layout = updateOpening(this.layout, opening.id, {
-          width: Math.max(0.1, Math.round(this.random() * 3 * 20) / 20),
-        });
+      }
+      case 2: {
+        const width = numberToCommit(this.numberText(), opening.width, NUMBER_LIMITS.width);
+        if (width !== null) patch = { width };
         break;
-      case 3:
-        layout = updateOpening(this.layout, opening.id, {
-          kind: this.pick<OpeningKind>(['door', 'window', 'passage'])!,
-        });
+      }
+      case 3: {
+        const height = numberToCommit(this.numberText(), opening.height, NUMBER_LIMITS.height);
+        if (height !== null) patch = { height };
         break;
-      default:
-        layout = updateOpening(this.layout, opening.id, { name: this.pick(['', 'Front']) ?? '' });
+      }
+      case 4: {
+        if (opening.kind !== 'window') break;
+        const limits = NUMBER_LIMITS.sillHeight;
+        const sillHeight = numberToCommit(this.numberText(), opening.sillHeight, limits);
+        if (sillHeight !== null) patch = { sillHeight };
+        break;
+      }
+      case 5:
+        patch = { kind: this.pick<OpeningKind>(['door', 'window', 'passage'])! };
+        break;
+      default: {
+        const name = textToCommit(this.text(), opening.name ?? '');
+        if (name !== null) patch = { name };
+      }
     }
-    this.dispatch({ type: 'edit', layout });
+    if (patch)
+      this.dispatch({ type: 'edit', layout: updateOpening(this.layout, opening.id, patch) });
   }
 
+  /** The changes the room inspector can make, through its fields. */
   updateRoom() {
     const room = this.pick(this.roomsHere());
     if (!room) return;
     this.dispatch({ type: 'select', selection: { kind: 'room', id: room.id } });
-    const patch =
-      this.random() < 0.5 ? { name: `Room ${this.int(9)}` } : { ceilingHeight: 2 + this.int(3) };
-    this.dispatch({ type: 'edit', layout: updateRoom(this.layout, room.id, patch) });
+    if (this.random() < 0.5) {
+      const name = textToCommit(this.text(), room.name, { required: true });
+      if (name !== null)
+        this.dispatch({ type: 'edit', layout: updateRoom(this.layout, room.id, { name }) });
+    } else {
+      const limits = NUMBER_LIMITS.ceilingHeight;
+      const ceilingHeight = numberToCommit(this.numberText(), room.ceilingHeight, limits);
+      if (ceilingHeight !== null) {
+        this.dispatch({
+          type: 'edit',
+          layout: updateRoom(this.layout, room.id, { ceilingHeight }),
+        });
+      }
+    }
+  }
+
+  /** The changes the home inspector can make, as it makes them. */
+  updateHome() {
+    this.dispatch({ type: 'select', selection: null });
+    const { layout } = this;
+    if (this.random() < 0.5) {
+      const name = textToCommit(this.text(), layout.name ?? '');
+      if (name === null) return;
+      const { name: _old, ...rest } = layout;
+      this.dispatch({ type: 'edit', layout: name ? { ...rest, name } : rest });
+    } else {
+      const limits = NUMBER_LIMITS.northBearing;
+      const north = numberToCommit(this.numberText(), layout.site.northBearing, limits);
+      if (north === null) return;
+      this.dispatch({
+        type: 'edit',
+        layout: { ...layout, site: { ...layout.site, northBearing: north % 360 } },
+      });
+    }
   }
 
   deleteSomething() {
@@ -246,7 +323,8 @@ class Run {
     else if (roll < 37) this.dragCorner();
     else if (roll < 52) this.addOpening();
     else if (roll < 64) this.updateOpening();
-    else if (roll < 70) this.updateRoom();
+    else if (roll < 67) this.updateRoom();
+    else if (roll < 70) this.updateHome();
     else if (roll < 77) this.deleteSomething();
     else if (roll < 84) this.dispatch({ type: 'undo' });
     else if (roll < 89) this.dispatch({ type: 'redo' });
@@ -361,6 +439,8 @@ describe('random edits', () => {
           } catch (error) {
             throw new Error(`${String(error)} (${where()})`, { cause: error });
           }
+          // Structurally valid, so the draft saved in the browser can always be read back.
+          expect(validate(run.layout).layout, where()).toBeDefined();
           expect(brokenBy(before, run.layout), where()).toBeNull();
           expect(offItsWall(before, run.layout), where()).toBeNull();
           expect(wrongDestination(run), where()).toBeNull();

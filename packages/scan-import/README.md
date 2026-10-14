@@ -5,9 +5,10 @@ Turns a phone's room scan into a `home-layout.json`. The iPhone scanner (Apple R
 - joins scanned walls into closed room outlines, with corners where the walls' lines meet;
 - turns the plan so the walls run along its axes, and moves it next to the origin;
 - puts each door, window and doorway on the wall the scanner says it is in, or else the nearest wall of its room, and works out the room behind it;
-- drops the second sighting of a door seen from both of the rooms it joins: one nearby of about the same width and height (and, for windows, a sill within 20 cm), where a door and a doorway can match (one side may not see the door itself) but a window only matches a window, and each sighting matches one from the other side at most. When a door and a doorway match, it's a door;
-- places furniture in the room its centre is in, on its own floor, turned with the plan;
+- keeps one of the two sightings of a door seen from both of the rooms it joins: one nearby of about the same width and height (and, for windows, a sill within 20 cm), where a door and a doorway can match (one side may not see the door itself) but a window only matches a window, and sightings pair up one to one: as many pairs as possible, then the closest. When a door and a doorway match, it's a door;
+- places furniture in the room it was scanned in, or, if its centre has drifted out of that room, in the room on the same floor it is deepest inside, turned with the plan;
 - splits rooms onto storeys by floor height, starting a new storey once a floor is more than 1.5 m above the lowest one on the current storey;
+- gives the same home whatever order the rooms, walls, openings and furniture are listed in; only ids and numbered names such as "Room 2" can differ;
 - validates the result. A scan it accepts always becomes a layout without errors: an outline that crosses itself becomes the shape around it, and anything under a centimetre in size, which the layout would write as 0, is left out.
 
 It also reports what it had to guess or leave out, such as walls that don't close, a door with no scanned room behind it, or a missing north, for the app to show before the user opens the layout in the editor.

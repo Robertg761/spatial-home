@@ -4,9 +4,11 @@ import {
   LAYOUT_FORMAT,
   LAYOUT_VERSION,
   NAME_MAX_LENGTH,
+  OUTSIDE,
   isSimplePolygon,
   pointInPolygon,
   polygonArea,
+  polygonCentroid,
   roomBehindWall,
   roomWalls,
   validateLayout,
@@ -262,46 +264,50 @@ function buildLayout(session: ScanSession, options: ImportOptions): ImportResult
   }
 
   // 6. What each opening leads to, now that every room is in place. A door between two scanned
-  //    rooms is seen from both sides, so the second sighting is dropped: one close by, of about the
-  //    same width and height, and a window if and only if this is one. A door and a doorway can be
-  //    the same opening, as one side may not see the door itself. Two windows also need their
-  //    sills within 20 cm, as windows can sit one above the other. Each opening kept matches one
-  //    sighting from the other side at most, the nearest.
-  const draft = { rooms };
-  const kept: Opening[] = [];
-  const paired = new Set<Opening>();
-  for (const opening of openings) {
-    const connects = roomBehindWall(draft, opening.wall.roomId, opening.wall.index, opening.offset);
-    const center = openingCenterOf(rooms, opening);
-    const [match] = kept
-      .filter(
-        (other) =>
-          !paired.has(other) &&
-          other.connects === opening.wall.roomId &&
-          other.wall.roomId === connects &&
-          (other.kind === 'window') === (opening.kind === 'window') &&
-          alike(other.width, opening.width) &&
-          alike(other.height, opening.height) &&
-          (other.kind !== 'window' ||
-            opening.kind !== 'window' ||
-            Math.abs(other.sillHeight - opening.sillHeight) <= 0.2)
-      )
-      .map((other) => ({ other, gap: distance(openingCenterOf(rooms, other), center) }))
-      .filter(({ gap }) => gap < 0.6)
-      .sort((a, b) => a.gap - b.gap);
-    if (match) {
-      // A door seen from one side and a doorway from the other is a door whose leaf one side
-      // missed, whichever was seen first.
-      const merged: Opening =
-        opening.kind === 'door' && match.other.kind === 'passage'
-          ? { ...match.other, kind: 'door' }
-          : match.other;
-      kept[kept.indexOf(match.other)] = merged;
-      paired.add(merged);
-      continue;
-    }
-    kept.push({ ...opening, connects });
+  //    rooms is seen from both sides, so one of the two sightings is dropped. Two sightings match
+  //    when they are close by, of about the same width and height, and both windows or neither; a
+  //    door and a doorway can be the same opening, as one side may not see the door itself, and
+  //    two windows also need their sills within 20 cm, as windows can sit one above the other.
+  //    Across each wall between two rooms, sightings pair up so that as many as possible match,
+  //    and then so that matched ones are as close as can be, whatever order they were scanned in.
+  //    Rooms that overlap, as drifting scans can, may both be behind a wall; looking through them
+  //    in order by position, rather than as scanned, makes that choice the same in any order too.
+  const draft = {
+    rooms: [...rooms].sort((a, b) =>
+      byPlace(polygonCentroid(a.outline), polygonCentroid(b.outline))
+    ),
+  };
+  const sightings = openings.map((opening) => ({
+    opening,
+    connects: roomBehindWall(draft, opening.wall.roomId, opening.wall.index, opening.offset),
+    center: openingCenterOf(rooms, opening),
+  }));
+  const dropped = new Set<Sighting>();
+  const doors = new Set<Sighting>();
+  const sides = new Map<string, Sighting[]>();
+  for (const sighting of sightings) {
+    if (sighting.connects === OUTSIDE) continue;
+    const side = `${sighting.opening.wall.roomId} ${sighting.connects}`;
+    sides.set(side, [...(sides.get(side) ?? []), sighting]);
   }
+  for (const [side, these] of sides) {
+    const [roomId, otherId] = side.split(' ') as [string, string];
+    if (roomId > otherId) continue;
+    for (const [one, other] of pairUp(these, sides.get(`${otherId} ${roomId}`) ?? [])) {
+      // Either sighting will do: the one further left on the plan is kept, so that doesn't
+      // depend on the scan order either. A door and a doorway make a door.
+      const [keep, drop] = byPlace(one.center, other.center) <= 0 ? [one, other] : [other, one];
+      dropped.add(drop);
+      if (drop.opening.kind === 'door') doors.add(keep);
+    }
+  }
+  const kept: Opening[] = sightings
+    .filter((sighting) => !dropped.has(sighting))
+    .map((sighting) => ({
+      ...sighting.opening,
+      ...(doors.has(sighting) ? { kind: 'door' as const } : {}),
+      connects: sighting.connects,
+    }));
   const interiorGuesses = kept.filter(
     (opening) => opening.kind !== 'window' && opening.connects === 'outside'
   ).length;
@@ -312,7 +318,7 @@ function buildLayout(session: ScanSession, options: ImportOptions): ImportResult
     });
   }
 
-  // 7. Furniture, in whichever room on its floor its centre is in.
+  // 7. Furniture, in the room on its floor its centre is in, its own room first.
   const fixtures: Fixture[] = [];
   const fixtureNames = new Map<string, number>();
   for (const room of planned) {
@@ -346,12 +352,25 @@ function buildLayout(session: ScanSession, options: ImportOptions): ImportResult
         continue;
       }
       const position = place(toPlan(object.center));
-      const home =
-        rooms.find(
-          (candidate) =>
-            candidate.floorId === floorId && pointInPolygon(position, candidate.outline)
-        ) ?? rooms.find((candidate) => candidate.id === roomIdByIndex.get(room.index));
-      if (!home) continue;
+      // Its own room when its centre is in it. Otherwise, as a scan can drift past a wall, the
+      // room on its floor it is deepest inside, or failing that its own room after all.
+      const source = rooms.find((candidate) => candidate.id === roomIdByIndex.get(room.index))!;
+      const home = pointInPolygon(position, source.outline)
+        ? source
+        : (rooms
+            .filter(
+              (candidate) =>
+                candidate.floorId === floorId && pointInPolygon(position, candidate.outline)
+            )
+            .map((candidate) => ({
+              candidate,
+              depth: nearestWallOf(candidate, position)?.distance ?? 0,
+            }))
+            .sort(
+              (a, b) =>
+                b.depth - a.depth ||
+                byPlace(polygonCentroid(a.candidate.outline), polygonCentroid(b.candidate.outline))
+            )[0]?.candidate ?? source);
       const [width, height, depth] = object.size;
       const count = (fixtureNames.get(label) ?? 0) + 1;
       fixtureNames.set(label, count);
@@ -399,6 +418,68 @@ function buildLayout(session: ScanSession, options: ImportOptions): ImportResult
   return { ok: true, layout, notes, validation: validateLayout(layout) };
 }
 
+// --- Openings seen from both sides ---
+
+interface Sighting {
+  opening: Opening;
+  connects: string;
+  center: Point2;
+}
+
+/** How many ways of pairing up sightings to try before settling for the best found. */
+const PAIRING_STEPS = 10_000;
+
+/**
+ * The pairs of matching sightings from two sides of the walls between two rooms: as many pairs as
+ * can be made, and of those, the pairs closest together in total.
+ */
+function pairUp(these: Sighting[], those: Sighting[]): [Sighting, Sighting][] {
+  // In order by position, so the outcome doesn't depend on the order of the scan.
+  const order = (list: Sighting[]) => [...list].sort((a, b) => byPlace(a.center, b.center));
+  const [a, b] = [order(these), order(those)];
+  let best: { pairs: [Sighting, Sighting][]; total: number } = { pairs: [], total: 0 };
+  const pairs: [Sighting, Sighting][] = [];
+  const used = new Set<Sighting>();
+  let steps = 0;
+  const visit = (i: number, total: number) => {
+    if (steps++ > PAIRING_STEPS || pairs.length + (a.length - i) < best.pairs.length) return;
+    if (i === a.length) {
+      // Pruning means this has at least as many pairs as the best so far.
+      if (pairs.length > best.pairs.length || total < best.total) {
+        best = { pairs: [...pairs], total };
+      }
+      return;
+    }
+    for (const other of b) {
+      if (used.has(other) || !sameOpening(a[i]!, other)) continue;
+      used.add(other);
+      pairs.push([a[i]!, other]);
+      visit(i + 1, total + distance(a[i]!.center, other.center));
+      pairs.pop();
+      used.delete(other);
+    }
+    visit(i + 1, total);
+  };
+  visit(0, 0);
+  return best.pairs;
+}
+
+/** Whether two sightings from either side of a wall can be the same opening. */
+function sameOpening({ opening: a, center: p }: Sighting, { opening: b, center: q }: Sighting) {
+  return (
+    (a.kind === 'window') === (b.kind === 'window') &&
+    alike(a.width, b.width) &&
+    alike(a.height, b.height) &&
+    (a.kind !== 'window' || b.kind !== 'window' || Math.abs(a.sillHeight - b.sillHeight) <= 0.2) &&
+    distance(p, q) < 0.6
+  );
+}
+
+/** Orders points left to right on the plan, then bottom to top. */
+function byPlace([x1, y1]: Point2, [x2, y2]: Point2): number {
+  return x1 - x2 || y1 - y2;
+}
+
 // --- Walls into outlines ---
 
 interface Segment {
@@ -420,8 +501,11 @@ function outlineFromWalls(
     a: toPlan(wall.start),
     b: toPlan(wall.end),
   }));
-  // A wall with no length has no direction to find a corner from, so it is left out.
-  const segments = all.filter(({ a, b }) => distance(a, b) >= 0.01);
+  // A wall with no length has no direction to find a corner from, so it is left out. The rest
+  // are put in order by position, so the outline doesn't depend on the order they were scanned.
+  const segments = all
+    .filter(({ a, b }) => distance(a, b) >= 0.01)
+    .sort((s, t) => s.a[0] - t.a[0] || s.a[1] - t.a[1] || s.b[0] - t.b[0] || s.b[1] - t.b[1]);
   const loop = chain(segments, tolerance);
   const label = scan.name ?? scan.category ?? 'A room';
   if (!loop) {

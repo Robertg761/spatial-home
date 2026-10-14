@@ -1,4 +1,10 @@
-import { roomWalls, validateLayout, type Point2 } from '@spatial-home/home-model';
+import {
+  openingCenter,
+  roomWalls,
+  validateLayout,
+  type HomeLayout,
+  type Point2,
+} from '@spatial-home/home-model';
 import { expect, test } from 'vitest';
 import { importScan } from '../src/import.ts';
 import { ScanSessionSchema, type ScanSessionInput, type Vector3 } from '../src/scan.ts';
@@ -6,7 +12,8 @@ import { session, toWorld, wallsAround } from './fixtures.ts';
 
 // Imports a few hundred made-up scans, untidy in the ways real ones are, and checks the promise
 // that matters most: a scan the importer accepts becomes a layout with no errors. It also checks
-// that no room keeps a wall too short to hold anything, which an opening could otherwise land on.
+// that no room keeps a wall too short to hold anything, which an opening could otherwise land on,
+// and that the same scan listed in another order gives the same home.
 
 /** A small seeded random number generator (mulberry32), so every run sees the same scans. */
 function generator(seed: number) {
@@ -206,20 +213,96 @@ function scan(random: Random): ScanSessionInput {
   return session(rooms, random.chance(0.7) ? north : undefined);
 }
 
-// FUZZ_SCANS=20000 npm test tries more of them.
-const SCANS = Number(process.env.FUZZ_SCANS ?? 400);
+/** The same scan with its rooms, and each room's walls, openings and furniture, in another order. */
+function shuffled(input: ScanSessionInput, random: Random): ScanSessionInput {
+  const shuffle = <T>(list: readonly T[] = []): T[] => {
+    const result = [...list];
+    for (let i = result.length - 1; i > 0; i--) {
+      const j = Math.floor(random.next() * (i + 1));
+      [result[i], result[j]] = [result[j]!, result[i]!];
+    }
+    return result;
+  };
+  const rooms = input.rooms.map((room) => ({
+    ...room,
+    walls: shuffle(room.walls),
+    openings: shuffle(room.openings),
+    objects: shuffle(room.objects),
+  }));
+  return { ...input, rooms: shuffle(rooms) };
+}
+
+/**
+ * What a layout says about the home, leaving out what only reflects the order of the scan: ids,
+ * the numbers in default names such as "Room 2" and "Chair 2", the order of lists, and which
+ * corner each outline starts from.
+ */
+function summary(layout: HomeLayout) {
+  const canonical = (outline: Point2[]) =>
+    [outline, [...outline].reverse()]
+      .flatMap((list) =>
+        list.map((_, i) => JSON.stringify([...list.slice(i), ...list.slice(0, i)]))
+      )
+      .sort()[0];
+  const elevation = new Map(layout.floors.map((floor) => [floor.id, floor.elevation]));
+  const rooms = new Map(layout.rooms.map((room) => [room.id, room]));
+  const key = new Map(
+    layout.rooms.map((room) => [
+      room.id,
+      `${elevation.get(room.floorId)} ${canonical(room.outline)}`,
+    ])
+  );
+  key.set('outside', 'outside');
+  return {
+    floors: layout.floors,
+    north: layout.site.northBearing,
+    rooms: layout.rooms
+      .map(
+        (room) =>
+          `${room.name.replace(/^Room \d+$/, 'Room')} ${key.get(room.id)} ${room.ceilingHeight}`
+      )
+      .sort(),
+    openings: layout.openings
+      .map((opening) => {
+        const [x, y] = openingCenter(rooms.get(opening.wall.roomId)!, opening);
+        const sill = opening.kind === 'window' ? opening.sillHeight : 0;
+        return `${key.get(opening.wall.roomId)} to ${key.get(opening.connects)}: ${opening.kind} at ${x.toFixed(3)} ${y.toFixed(3)}, ${opening.width} x ${opening.height} from ${sill}`;
+      })
+      .sort(),
+    fixtures: layout.fixtures
+      .map(
+        (fixture) =>
+          `${key.get(fixture.roomId)}: ${fixture.kind} at ${fixture.position}, ${Object.values(fixture.size)} turned ${fixture.rotation}`
+      )
+      .sort(),
+  };
+}
+
+// FUZZ_SCANS=20000 npm test tries more of them, and FUZZ_FROM=5397 starts from another seed.
+const SCANS = Number(process.env.FUZZ_SCANS ?? 300);
+const FROM = Number(process.env.FUZZ_FROM ?? 1);
 
 test('every scan it accepts becomes a layout without errors', { timeout: 5000 + SCANS * 5 }, () => {
   const failures: string[] = [];
   let accepted = 0;
-  for (let seed = 1; seed <= SCANS; seed++) {
+  for (let seed = FROM; seed < FROM + SCANS; seed++) {
     const random = generator(seed);
     const input = scan(random);
     expect(ScanSessionSchema.safeParse(input).success).toBe(true);
-    const result = importScan(input, {
+    const options = {
       alignToWalls: random.chance(0.8),
       ...(random.chance(0.2) ? { name: random.pick(names) } : {}),
-    });
+    };
+    const result = importScan(input, options);
+    const reordered = importScan(shuffled(input, generator(-seed)), options);
+    if (reordered.ok !== result.ok) failures.push(`seed ${seed}: accepted in one order only`);
+    if (result.ok && reordered.ok) {
+      const [one, other] = [summary(result.layout), summary(reordered.layout)];
+      const differ = (Object.keys(one) as (keyof typeof one)[]).filter(
+        (part) => JSON.stringify(one[part]) !== JSON.stringify(other[part])
+      );
+      if (differ.length > 0) failures.push(`seed ${seed}: ${differ.join(', ')} depend on order`);
+    }
     if (!result.ok) continue;
     accepted++;
     const validation = validateLayout(result.layout);

@@ -220,6 +220,26 @@ describe('several rooms in one session', () => {
     ]);
   });
 
+  test.each([
+    ['bedroom', [0, 1]],
+    ['hallway', [1, 0]],
+  ])('pairs sightings so as many as possible match, with the %s scanned first', (_, order) => {
+    // Two windows, seen at 1.0 m and 1.4 m along the wall from the bedroom and at 1.3 m and
+    // 1.7 m from the hallway. Pairing 1.3 with its nearest, 1.4, would leave the other two apart.
+    const scan = twoRooms();
+    const window = (at: Point2) => ({
+      kind: 'window' as const,
+      center: toWorld(at, 1.5, NORTH),
+      width: 0.3,
+      height: 0.5,
+    });
+    scan.rooms[0]!.openings = [window([4, 1]), window([4, 1.4])];
+    scan.rooms[1]!.openings = [window([4.15, 1.3]), window([4.15, 1.7])];
+    scan.rooms = order.map((i) => scan.rooms[i]!);
+    const { layout } = imported(importScan(scan));
+    expect(layout.openings).toHaveLength(2);
+  });
+
   test('pairs each sighting of an opening with only one from the other room', () => {
     // Two narrow windows side by side, of which the bedroom saw only one.
     const scan = twoRooms();
@@ -270,6 +290,34 @@ describe('rooms on several storeys', () => {
   const tapped = (outline: Point2[], floor: number) =>
     outline.map((point) => toWorld(point, floor, 0));
   const beside = (dx: number) => bedroom.map(([x, y]): Point2 => [x + dx, y]);
+
+  test.each([
+    ['first', [0, 1]],
+    ['second', [1, 0]],
+  ])('keeps furniture in its own room where rooms overlap, scanned %s', (_, order) => {
+    // The study's scan drifted 5 cm into the bedroom, and a desk against the wall between them
+    // is inside both.
+    const study = bedroom.map(([x, y]): Point2 => [x + 3.95, y]);
+    const rooms = [
+      { name: 'Bedroom', outline: bedroom.map((point) => toWorld(point, 0, 0)) },
+      {
+        name: 'Study',
+        outline: study.map((point) => toWorld(point, 0, 0)),
+        objects: [
+          {
+            category: 'desk',
+            center: toWorld([3.98, 1.5], 0.4, 0),
+            size: [1, 0.8, 0.6] as [number, number, number],
+            yaw: 0,
+          },
+        ],
+      },
+    ];
+    const result = imported(
+      importScan(session(order.map((i) => rooms[i]!)), { alignToWalls: false })
+    );
+    expect(result.layout.fixtures.map((fixture) => fixture.roomId)).toEqual(['study']);
+  });
 
   test('puts furniture in a room on its own floor', () => {
     // A bedroom directly above the living room, scanned second.

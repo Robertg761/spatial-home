@@ -124,9 +124,15 @@ export function App() {
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [state.layout, state.selection, tool]);
 
+  // Reading a file takes a moment, so ask about replacing the layout once it has been read, as it
+  // is then, and only for the file chosen last.
+  const openRequest = useRef(0);
   const openFile = async (file: File) => {
+    const request = ++openRequest.current;
     const result = parseLayoutJson(await file.text());
+    if (request !== openRequest.current) return;
     if (result.layout) {
+      if (!confirmReplace()) return;
       const { layout, renamed } = uniqueIds(result.layout);
       const checked = validateLayout(layout);
       const errors = checked.ok ? 0 : checked.errors.length;
@@ -153,10 +159,12 @@ export function App() {
   };
 
   const isEmpty = state.layout.rooms.length === 0;
-  // A room being drawn is work too, and replacing the layout would throw its corners away.
+  // A room being drawn is work too, and replacing the layout would throw its corners away. Kept in
+  // a ref so a file that finishes reading later sees the editor as it is then.
+  const pristine = useRef(true);
+  pristine.current = isPristine(state) && !drawing;
   const confirmReplace = () =>
-    (isPristine(state) && !drawing) ||
-    window.confirm('Replace the current layout? You can still save it first.');
+    pristine.current || window.confirm('Replace the current layout? You can still save it first.');
 
   return (
     <div className="app">
@@ -214,7 +222,7 @@ export function App() {
           onChange={(event) => {
             const file = event.target.files?.[0];
             event.target.value = '';
-            if (file && confirmReplace()) void openFile(file);
+            if (file) void openFile(file);
           }}
         />
       </header>

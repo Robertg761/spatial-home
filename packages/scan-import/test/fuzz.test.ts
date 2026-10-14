@@ -206,7 +206,8 @@ function room(random: Random, north: number, floor: number) {
 
 /**
  * Two rooms of the same name with no gap between them, each seeing the opening between them at
- * exactly the same place, as tapped corners on a shared wall can give.
+ * exactly the same place, as tapped corners on a shared wall can give. One of them may see a few
+ * there, one above the other.
  */
 function twins(random: Random, north: number, floor: number) {
   const [x, y] = [random.between(-20, 20), random.between(-20, 20)];
@@ -215,7 +216,7 @@ function twins(random: Random, north: number, floor: number) {
   const along = random.between(0.6, h - 0.6);
   const sighting = (seen: 'door' | 'window' | 'opening') => ({
     kind: seen,
-    center: toWorld([x + w, y + along], floor + 1, north),
+    center: toWorld([x + w, y + along], floor + 1 + random.pick([0, 0, 0.1, -0.1, 0.15]), north),
     width: random.between(0.8, 0.9),
     height: random.pick([1, 1.1]),
   });
@@ -223,7 +224,10 @@ function twins(random: Random, north: number, floor: number) {
   const twin = (corners: Point2[], seen: 'door' | 'window' | 'opening') => ({
     name,
     outline: corners.map((point) => toWorld(point, floor, north)),
-    openings: [sighting(seen)],
+    openings: Array.from(
+      { length: random.chance(0.5) ? 1 : 2 + Math.floor(random.next() * 2) },
+      () => sighting(seen)
+    ),
   });
   const other = kind === 'window' ? 'window' : random.pick(['door', 'opening'] as const);
   return [

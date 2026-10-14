@@ -220,6 +220,28 @@ describe('several rooms in one session', () => {
     ]);
   });
 
+  test('pairs stacked sightings the same way in any order', () => {
+    // Two small windows one above the other seen from the hallway, sills 0.6 m and 0.8 m, and one
+    // between them seen from the bedroom, sill 0.7 m: either could be its match.
+    const window = (at: Point2, sill: number) => ({
+      kind: 'window' as const,
+      center: toWorld(at, sill + 0.1, NORTH),
+      width: 0.5,
+      height: 0.2,
+    });
+    const stacked = [window([4.15, 2], 0.6), window([4.15, 2], 0.8)];
+    const result = (hallwayWindows: typeof stacked) => {
+      const scan = twoRooms();
+      scan.rooms[0]!.openings = [window([4, 2], 0.7)];
+      scan.rooms[1]!.openings = hallwayWindows;
+      const { layout } = imported(importScan(scan));
+      return layout.openings
+        .map((opening) => [opening.wall.roomId, opening.kind === 'window' && opening.sillHeight])
+        .sort();
+    };
+    expect(result([...stacked].reverse())).toEqual(result(stacked));
+  });
+
   test.each([
     ['bedroom', [0, 1]],
     ['hallway', [1, 0]],

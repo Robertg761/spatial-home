@@ -96,7 +96,9 @@ function room(random: Random, north: number, floor: number) {
     : wallsAround(corners, length(random, [2, 3]), north, floor, random.between(0, 0.25));
   if (!guided) {
     // Walls the scanner reports in any order, some missing, some extra.
-    if (random.chance(0.2)) walls.splice(Math.floor(random.next() * walls.length), 1);
+    while (walls.length > 0 && random.chance(0.25)) {
+      walls.splice(Math.floor(random.next() * walls.length), 1);
+    }
     if (random.chance(0.3)) walls.reverse();
     for (let i = 0; random.chance(0.4) && i < 4; i++) {
       const start = random.pick(corners);
@@ -104,6 +106,11 @@ function room(random: Random, north: number, floor: number) {
         ? start
         : [start[0] + random.between(-1, 1), start[1] + random.between(-1, 1)];
       walls.push({ start: at(start, 0), end: at(end, 0), height: length(random, [0.5, 3]) });
+    }
+    for (let i = 0; random.chance(0.2) && i < 4; i++) {
+      // A wall record with no length, anywhere.
+      const point = at([random.between(-30, 30), random.between(-30, 30)], 0);
+      walls.push({ start: point, end: point, height: length(random, [0.5, 3]) });
     }
   }
   const withIds = walls.map((wall, i) => (random.chance(0.5) ? { id: `w${i}`, ...wall } : wall));

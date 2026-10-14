@@ -5,7 +5,7 @@ Turns a phone's room scan into a `home-layout.json`. The iPhone scanner (Apple R
 - joins scanned walls into closed room outlines, with corners where the walls' lines meet;
 - turns the plan so the walls run along its axes, and moves it next to the origin;
 - puts each door, window and doorway on the wall the scanner says it is in, or else the nearest wall of its room, and works out the room behind it;
-- drops the second sighting of a door seen from both of the rooms it joins: one nearby of about the same width, where a door and a doorway can match (one side may not see the door itself) but a window only matches a window, and each sighting matches one from the other side at most. When a door and a doorway match, it's a door;
+- drops the second sighting of a door seen from both of the rooms it joins: one nearby of about the same width and height (and, for windows, a sill within 20 cm), where a door and a doorway can match (one side may not see the door itself) but a window only matches a window, and each sighting matches one from the other side at most. When a door and a doorway match, it's a door;
 - places furniture in the room its centre is in, on its own floor, turned with the plan;
 - splits rooms onto storeys by floor height, starting a new storey once a floor is more than 1.5 m above the lowest one on the current storey;
 - validates the result. A scan it accepts always becomes a layout without errors: an outline that crosses itself becomes the shape around it, and anything under a centimetre in size, which the layout would write as 0, is left out.

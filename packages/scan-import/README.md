@@ -36,7 +36,7 @@ That example is cut down to one wall; a real room has one per side.
 
 | Field | Meaning |
 | --- | --- |
-| `rooms[].outline` | Floor corners in order, if the scanner has them, as from a **guided capture** where the user taps each corner. Takes priority over `walls`. Corners that are all in a line are refused. |
+| `rooms[].outline` | Floor corners in order, if the scanner has them, as from a **guided capture** where the user taps each corner. Takes priority over `walls`. Corners 2 cm apart or less become one, and a room whose corners are then all in a line is refused. |
 | `rooms[].walls` | Each wall's two bottom corners and its height. Ends don't need to meet exactly: ends within 30 cm join, and the corner is where the two walls' lines cross. If the walls make more than one loop, such as round a column, the one around the most floor is the room. Walls that aren't part of it, such as a short freestanding one or one with no length, are left out. |
 | `rooms[].ceilingHeight` | When measured or typed in. Otherwise the tallest wall, or 2.5 m when there are no walls. |
 | `rooms[].openings` | `door`, `window` or `opening` (a doorway with no door): the centre of the opening, with its width and height. A window's sill comes from its centre height. `wallId`, if the scanner knows it, is the `id` of the room's wall it is in; otherwise it goes on the nearest wall. |

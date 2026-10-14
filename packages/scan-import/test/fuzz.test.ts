@@ -1,11 +1,12 @@
-import { validateLayout, type Point2 } from '@spatial-home/home-model';
+import { roomWalls, validateLayout, type Point2 } from '@spatial-home/home-model';
 import { expect, test } from 'vitest';
 import { importScan } from '../src/import.ts';
 import { ScanSessionSchema, type ScanSessionInput, type Vector3 } from '../src/scan.ts';
 import { session, toWorld, wallsAround } from './fixtures.ts';
 
 // Imports a few hundred made-up scans, untidy in the ways real ones are, and checks the promise
-// that matters most: a scan the importer accepts becomes a layout with no errors.
+// that matters most: a scan the importer accepts becomes a layout with no errors. It also checks
+// that no room keeps a wall too short to hold anything, which an opening could otherwise land on.
 
 /** A small seeded random number generator (mulberry32), so every run sees the same scans. */
 function generator(seed: number) {
@@ -76,6 +77,18 @@ function shape(random: Random): Point2[] {
         return [x + radius * Math.cos(angle), y + radius * Math.sin(angle)];
       });
     },
+    (): Point2[] => [
+      // A sliver, with two corners a few centimetres apart.
+      [x, y],
+      [x + random.between(-0.04, 0.04), y + random.between(-0.04, 0.04)],
+      [x + w, y + h],
+    ],
+    (): Point2[] => [
+      // A triangle, which tidying can't take a corner off.
+      [x, y],
+      [x + w, y + random.between(-h, h)],
+      [x + random.between(-w, w), y + h],
+    ],
     () =>
       // Corners tapped in any order, which may cross.
       Array.from({ length: 3 + Math.floor(random.next() * 5) }, (): Point2 => [
@@ -85,8 +98,24 @@ function shape(random: Random): Point2[] {
   ])();
 }
 
+/** Adds runs of corners a few centimetres apart, as a shaky tap or a sliver of wall gives. */
+function withNearCorners(random: Random, corners: Point2[]): Point2[] {
+  const result = [...corners];
+  for (let runs = random.chance(0.5) ? 1 + Math.floor(random.next() * 3) : 0; runs > 0; runs--) {
+    const i = Math.floor(random.next() * result.length);
+    const run: Point2[] = [];
+    let [x, y] = result[i]!;
+    for (let n = 1 + Math.floor(random.next() * 3); n > 0; n--) {
+      [x, y] = [x + random.between(-0.03, 0.03), y + random.between(-0.03, 0.03)];
+      run.push([x, y]);
+    }
+    result.splice(i + 1, 0, ...run);
+  }
+  return result;
+}
+
 function room(random: Random, north: number, floor: number) {
-  const corners = shape(random);
+  const corners = withNearCorners(random, shape(random));
   const at = (point: Point2, height: number): Vector3 => toWorld(point, floor + height, north);
   const guided = random.chance(0.3);
   const walls = guided
@@ -115,9 +144,22 @@ function room(random: Random, north: number, floor: number) {
   }
   const withIds = walls.map((wall, i) => (random.chance(0.5) ? { id: `w${i}`, ...wall } : wall));
   const onAWall = (): Point2 => {
-    const i = Math.floor(random.next() * corners.length);
-    const [a, b] = [corners[i]!, corners[(i + 1) % corners.length]!];
+    const edges = corners.map((corner, i) => [corner, corners[(i + 1) % corners.length]!] as const);
+    // Sometimes the shortest wall, which tidying the outline may have shrunk further.
+    const [a, b] = random.chance(0.3)
+      ? edges.reduce((best, edge) =>
+          Math.hypot(edge[1][0] - edge[0][0], edge[1][1] - edge[0][1]) <
+          Math.hypot(best[1][0] - best[0][0], best[1][1] - best[0][1])
+            ? edge
+            : best
+        )
+      : random.pick(edges);
     const t = random.between(-0.1, 1.1);
+    if (random.chance(0.3)) {
+      // Right on the wall, however short it is.
+      const u = random.between(0, 1);
+      return [a[0] + (b[0] - a[0]) * u, a[1] + (b[1] - a[1]) * u];
+    }
     return [
       a[0] + (b[0] - a[0]) * t + random.between(-0.2, 0.2),
       a[1] + (b[1] - a[1]) * t + random.between(-0.2, 0.2),
@@ -184,6 +226,8 @@ test('every scan it accepts becomes a layout without errors', { timeout: 5000 + 
     if (!validation.ok) {
       failures.push(`seed ${seed}: ${validation.errors.map((issue) => issue.code).join(', ')}`);
     }
+    const short = result.layout.rooms.flatMap(roomWalls).filter((wall) => wall.length <= 0.02);
+    if (short.length > 0) failures.push(`seed ${seed}: ${short.length} walls of 2 cm or less`);
   }
   expect(failures).toEqual([]);
   expect(accepted).toBeGreaterThan(SCANS * 0.75);

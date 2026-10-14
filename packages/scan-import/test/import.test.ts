@@ -412,6 +412,28 @@ describe('outlines that cross themselves', () => {
   });
 });
 
+test('refuses a sliver whose only short wall comes from tidying the corners', () => {
+  // The second corner is next to the third, so it goes, leaving the first and third 1 cm apart:
+  // a wall too short for anything, here a door.
+  const tapped: Point2[] = [
+    [0, 0.01],
+    [0.02, 0],
+    [0.01, 0.01],
+    [5, 3],
+  ];
+  const result = importScan(
+    session([
+      {
+        name: 'Sliver',
+        outline: tapped.map((p) => toWorld(p, 0, 0)),
+        openings: [{ kind: 'door', center: toWorld([0.005, 0.01], 1, 0), width: 0.8, height: 2 }],
+      },
+    ]),
+    { alignToWalls: false }
+  );
+  expect(result.ok).toBe(false);
+});
+
 test('uses a measured ceiling height', () => {
   const result = imported(
     importScan(

@@ -190,7 +190,11 @@ export function roomBehindWall(
   const neighbours = layout.rooms.filter(
     (other) => other.id !== room.id && other.floorId === room.floorId
   );
-  for (let depth = 0.05; depth <= maxThickness + EPSILON; depth += 0.1) {
+  // Every 10 cm from 5 cm out, and at `maxThickness` itself, so a wall that thick is seen across.
+  const depths: number[] = [];
+  for (let depth = 0.05; depth < maxThickness - EPSILON; depth += 0.1) depths.push(depth);
+  depths.push(maxThickness);
+  for (const depth of depths) {
     const probe: Point2 = [px + nx * depth, py + ny * depth];
     const found = neighbours.find((other) => pointInPolygon(probe, other.outline));
     if (found) return found.id;

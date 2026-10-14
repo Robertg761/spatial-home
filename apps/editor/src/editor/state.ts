@@ -1,4 +1,5 @@
 import { createEmptyLayout, serializeLayout, type HomeLayout } from '@spatial-home/home-model';
+import { uniqueIds } from './plan.ts';
 
 export type Selection = { kind: 'room' | 'opening'; id: string } | null;
 
@@ -26,7 +27,9 @@ export type EditorAction =
 
 const HISTORY_LIMIT = 200;
 
-export function initialState(layout: HomeLayout): EditorState {
+/** Editing starts with every item's id made unique, as edits find items by id. */
+export function initialState(loaded: HomeLayout): EditorState {
+  const { layout } = uniqueIds(loaded);
   return {
     layout,
     floorId: layout.floors[0]?.id ?? '',

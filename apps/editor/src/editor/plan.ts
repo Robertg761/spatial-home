@@ -363,7 +363,58 @@ export function deleteItem(
 
 /** An id based on `base` that no item in the layout uses yet. */
 export function uniqueId(layout: HomeLayout, base: string): string {
-  const used = new Set<string>([
+  const used = usedIds(layout);
+  return used.has(base) ? numbered(used, base) : base;
+}
+
+/**
+ * Renames each item whose id an earlier item, or the outside, already has, as the editor finds
+ * items by id. What referred to a renamed floor or room goes to the first one that had the id,
+ * which is the one meant unless the file was ambiguous.
+ */
+export function uniqueIds(layout: HomeLayout): { layout: HomeLayout; renamed: number } {
+  const used = usedIds(layout);
+  const seen = new Set([OUTSIDE]);
+  let renamed = 0;
+  const firstFloor = new Map<string, string>();
+  const firstRoom = new Map<string, string>();
+  const unique = <T extends { id: string }>(items: T[], first?: Map<string, string>): T[] =>
+    items.map((item) => {
+      const id = seen.has(item.id) ? numbered(used, item.id) : item.id;
+      used.add(id);
+      seen.add(id);
+      if (first && !first.has(item.id)) first.set(item.id, id);
+      if (id === item.id) return item;
+      renamed++;
+      return { ...item, id };
+    });
+  const floors = unique(layout.floors, firstFloor);
+  const rooms = unique(layout.rooms, firstRoom);
+  const openings = unique(layout.openings);
+  const fixtures = unique(layout.fixtures);
+  const devices = unique(layout.devices);
+  if (renamed === 0) return { layout, renamed };
+
+  const room = (id: string) => firstRoom.get(id) ?? id;
+  return {
+    layout: {
+      ...layout,
+      floors,
+      rooms: rooms.map((r) => ({ ...r, floorId: firstFloor.get(r.floorId) ?? r.floorId })),
+      openings: openings.map((opening) => ({
+        ...opening,
+        wall: { ...opening.wall, roomId: room(opening.wall.roomId) },
+        connects: opening.connects === OUTSIDE ? OUTSIDE : room(opening.connects),
+      })),
+      fixtures: fixtures.map((fixture) => ({ ...fixture, roomId: room(fixture.roomId) })),
+      devices: devices.map((device) => ({ ...device, roomId: room(device.roomId) })),
+    },
+    renamed,
+  };
+}
+
+function usedIds(layout: HomeLayout): Set<string> {
+  return new Set<string>([
     OUTSIDE,
     ...layout.floors.map((item) => item.id),
     ...layout.rooms.map((item) => item.id),
@@ -371,7 +422,9 @@ export function uniqueId(layout: HomeLayout, base: string): string {
     ...layout.fixtures.map((item) => item.id),
     ...layout.devices.map((item) => item.id),
   ]);
-  if (!used.has(base)) return base;
+}
+
+function numbered(used: Set<string>, base: string): string {
   for (let n = 2; ; n++) {
     if (!used.has(`${base}-${n}`)) return `${base}-${n}`;
   }

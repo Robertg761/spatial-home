@@ -3,6 +3,7 @@ import {
   createEmptyLayout,
   validateLayout,
   type HomeLayout,
+  type Point2,
 } from '@spatial-home/home-model';
 import sample from '@spatial-home/home-model/examples/sample-flat.json';
 import { describe, expect, test } from 'vitest';
@@ -17,6 +18,7 @@ import {
   snapPoint,
   snapToGrid,
   uniqueId,
+  uniqueIds,
   updateOpening,
 } from '../src/editor/plan.ts';
 
@@ -244,6 +246,43 @@ describe('editing', () => {
     expect(validateLayout(layout).ok).toBe(true);
   });
 
+  test('renames items whose ids are already used, keeping what refers to them', () => {
+    const flat = sampleFlat();
+    const kitchen = flat.rooms.find((room) => room.id === 'kitchen')!;
+    const annex = { ...kitchen, outline: kitchen.outline.map(([x, y]) => [x + 20, y] as Point2) };
+    const layout: HomeLayout = {
+      ...flat,
+      // A floor that shares the hallway's id comes first, so the hallway is the one renamed.
+      floors: [...flat.floors, { id: 'hallway', name: 'Loft', level: 1, elevation: 3 }],
+      rooms: [...flat.rooms, annex],
+      openings: [...flat.openings, { ...flat.openings[0]! }],
+    };
+    expect(errorCodes(layout)).toContain('duplicate-id');
+
+    const { layout: fixed, renamed } = uniqueIds(layout);
+    expect(renamed).toBe(3);
+    expect(errorCodes(fixed)).toEqual([]);
+    expect(fixed.floors.map((floor) => floor.id)).toEqual(['ground-floor', 'hallway']);
+    expect(fixed.rooms.map((room) => room.id)).toEqual([
+      'living-room',
+      'kitchen',
+      'hallway-2',
+      'bathroom',
+      'bedroom',
+      'kitchen-2',
+    ]);
+    expect(fixed.rooms.at(-1)!.outline).toEqual(annex.outline);
+    // Only one room was called hallway, so what referred to it now refers to its new id.
+    const door = (l: HomeLayout, id: string) => l.openings.find((o) => o.id === id)!;
+    expect(door(fixed, 'kitchen-door').wall.roomId).toBe('hallway-2');
+    expect(door(fixed, 'living-room-door').wall.roomId).toBe('hallway-2');
+    // Two rooms were called kitchen, so a reference to it stays with the first.
+    expect(door(fixed, 'kitchen-door').connects).toBe('kitchen');
+    expect(fixed.openings.at(-1)!.id).toBe(`${flat.openings[0]!.id}-2`);
+    // A layout without duplicates comes back as it was.
+    expect(uniqueIds(flat)).toEqual({ layout: flat, renamed: 0 });
+  });
+
   test('unique ids avoid every id in the layout and the reserved one', () => {
     const layout = sampleFlat();
     expect(uniqueId(layout, 'kitchen')).toBe('kitchen-2');
@@ -251,3 +290,8 @@ describe('editing', () => {
     expect(uniqueId(layout, 'garage')).toBe('garage');
   });
 });
+
+function errorCodes(layout: HomeLayout): string[] {
+  const result = validateLayout(layout);
+  return result.ok ? [] : result.errors.map((issue) => issue.code);
+}

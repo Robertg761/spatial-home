@@ -10,7 +10,7 @@ import { flushSync } from 'react-dom';
 import { Inspector } from './components/Inspector.tsx';
 import { IssuesPanel, selectionForIssue } from './components/IssuesPanel.tsx';
 import { PlanView, type Tool } from './components/PlanView.tsx';
-import { deleteItem } from './editor/plan.ts';
+import { deleteItem, uniqueIds } from './editor/plan.ts';
 import { editorReducer, initialState, isPristine } from './editor/state.ts';
 import { createDraftSaver, downloadLayout, loadDraft } from './editor/storage.ts';
 
@@ -127,12 +127,22 @@ export function App() {
   const openFile = async (file: File) => {
     const result = parseLayoutJson(await file.text());
     if (result.layout) {
-      const errors = result.ok ? 0 : result.errors.length;
+      const { layout, renamed } = uniqueIds(result.layout);
+      const checked = validateLayout(layout);
+      const errors = checked.ok ? 0 : checked.errors.length;
       load(
-        result.layout,
-        errors
-          ? `Opened ${file.name}. It has ${errors} ${errors === 1 ? 'problem' : 'problems'} to fix, listed under Checks.`
-          : `Opened ${file.name}.`
+        layout,
+        [
+          `Opened ${file.name}.`,
+          renamed &&
+            (renamed === 1
+              ? 'One item had an id already in use, so it was given a new one.'
+              : `${renamed} items had ids already in use, so they were given new ones.`),
+          errors &&
+            `It has ${errors} ${errors === 1 ? 'problem' : 'problems'} to fix, listed under Checks.`,
+        ]
+          .filter(Boolean)
+          .join(' ')
       );
     } else if (!result.ok) {
       const [first] = result.errors;

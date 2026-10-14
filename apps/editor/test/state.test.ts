@@ -128,6 +128,14 @@ describe('editorReducer', () => {
     expect(next.selection).toBeNull();
   });
 
+  test('loading a layout gives every item its own id', () => {
+    const { state } = withRoom();
+    const twice = { ...state.layout, rooms: [...state.layout.rooms, ...state.layout.rooms] };
+    const loaded = editorReducer(state, { type: 'load', layout: twice });
+    expect(loaded.layout.rooms.map((room) => room.id)).toEqual(['room-1', 'room-1-2']);
+    expect(validateLayout(loaded.layout).ok).toBe(true);
+  });
+
   test('loading a layout starts a fresh history', () => {
     const { state } = withRoom();
     const loaded = editorReducer(state, { type: 'load', layout: createEmptyLayout('Other') });

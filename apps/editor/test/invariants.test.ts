@@ -317,19 +317,43 @@ function wrongDestination(run: Run): string | null {
   return null;
 }
 
-const STARTS: [string, () => HomeLayout][] = [
-  ['the sample flat', () => validateLayout(structuredClone(sample)).layout!],
-  ['a new layout', () => createEmptyLayout()],
-  ['a layout without floors', () => ({ ...createEmptyLayout(), floors: [] })],
+function sampleFlat(): HomeLayout {
+  return validateLayout(structuredClone(sample)).layout!;
+}
+
+/** The sample with ids used twice: by a floor and a room, two rooms, and two openings. */
+function withDuplicateIds(): HomeLayout {
+  const flat = sampleFlat();
+  const kitchen = flat.rooms.find((room) => room.id === 'kitchen')!;
+  return {
+    ...flat,
+    floors: [...flat.floors, { id: 'hallway', name: 'Loft', level: 1, elevation: 3 }],
+    rooms: [
+      ...flat.rooms,
+      { ...kitchen, outline: kitchen.outline.map(([x, y]) => [x - 5, y] as Point2) },
+    ],
+    openings: [...flat.openings, { ...flat.openings[0]! }],
+  };
+}
+
+/** Where to start, and how many runs from there. */
+const STARTS: [string, () => HomeLayout, number][] = [
+  ['the sample flat', sampleFlat, 50],
+  ['a new layout', () => createEmptyLayout(), 80],
+  ['a layout without floors', () => ({ ...createEmptyLayout(), floors: [] }), 80],
+  ['a layout with duplicate ids', withDuplicateIds, 30],
 ];
 
 describe('random edits', () => {
-  for (const [name, start] of STARTS) {
+  for (const [name, start, runs] of STARTS) {
     test(`keep ${name} repairable`, () => {
-      for (let seed = 1; seed <= 80; seed++) {
-        const initial = start();
-        const run = new Run(initial, seed * 7919 + name.length);
+      for (let seed = 1; seed <= runs; seed++) {
+        const run = new Run(start(), seed * 7919 + name.length);
+        const initial = run.layout;
         const where = () => `seed ${seed}, after:\n${run.log.slice(-8).join('\n')}`;
+        // Edits find items by id, so every id must be unique from the start.
+        expect(errorCodes(initial)).not.toContain('duplicate-id');
+        expect(errorCodes(initial)).not.toContain('reserved-id');
         for (let i = 0; i < 25; i++) {
           const before = run.layout;
           try {

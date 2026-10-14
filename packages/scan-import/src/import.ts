@@ -217,21 +217,30 @@ function buildLayout(session: ScanSession, options: ImportOptions): ImportResult
   // 6. What each opening leads to, now that every room is in place. A door between two scanned
   //    rooms is seen from both sides, so the second sighting is dropped: one close by, of about the
   //    same width, and a window if and only if this is one. A door and a doorway can be the same
-  //    opening, as one side may not see the door itself.
+  //    opening, as one side may not see the door itself. Each opening kept matches one sighting
+  //    from the other side at most, the nearest.
   const draft = { rooms };
   const kept: Opening[] = [];
+  const paired = new Set<Opening>();
   for (const opening of openings) {
     const connects = roomBehindWall(draft, opening.wall.roomId, opening.wall.index, opening.offset);
     const center = openingCenterOf(rooms, opening);
-    const duplicate = kept.some(
-      (other) =>
-        other.connects === opening.wall.roomId &&
-        other.wall.roomId === connects &&
-        (other.kind === 'window') === (opening.kind === 'window') &&
-        Math.min(other.width, opening.width) >= 0.7 * Math.max(other.width, opening.width) &&
-        distance(openingCenterOf(rooms, other), center) < 0.6
-    );
-    if (duplicate) continue;
+    const [match] = kept
+      .filter(
+        (other) =>
+          !paired.has(other) &&
+          other.connects === opening.wall.roomId &&
+          other.wall.roomId === connects &&
+          (other.kind === 'window') === (opening.kind === 'window') &&
+          Math.min(other.width, opening.width) >= 0.7 * Math.max(other.width, opening.width)
+      )
+      .map((other) => ({ other, gap: distance(openingCenterOf(rooms, other), center) }))
+      .filter(({ gap }) => gap < 0.6)
+      .sort((a, b) => a.gap - b.gap);
+    if (match) {
+      paired.add(match.other);
+      continue;
+    }
     kept.push({ ...opening, connects });
   }
   const interiorGuesses = kept.filter(
@@ -327,21 +336,24 @@ function outlineFromWalls(
   tolerance: number,
   warn: (message: string) => void
 ): Point2[] | null {
-  const segments: Segment[] = scan.walls.map((wall) => ({
+  const all: Segment[] = scan.walls.map((wall) => ({
     a: toPlan(wall.start),
     b: toPlan(wall.end),
   }));
+  // A wall with no length has no direction to find a corner from, so it is left out.
+  const segments = all.filter(({ a, b }) => distance(a, b) >= 0.01);
   const loop = chain(segments, tolerance);
   const label = scan.name ?? scan.category ?? 'A room';
   if (!loop) {
     warn(
       `${label}: its walls don't join into a closed loop, so its outline is the shape around them. Check it in the editor.`
     );
-    return convexHull(segments.flatMap(({ a, b }) => [a, b]));
+    return convexHull(all.flatMap(({ a, b }) => [a, b]));
   }
-  if (loop.length < segments.length) {
+  const left = all.length - loop.length;
+  if (left > 0) {
     warn(
-      `${label}: left out ${segments.length - loop.length} wall ${segments.length - loop.length === 1 ? 'piece' : 'pieces'} that weren't part of the room's outline.`
+      `${label}: left out ${left} wall ${left === 1 ? 'piece' : 'pieces'} that weren't part of the room's outline.`
     );
   }
   return loop.map((segment, i) => {
@@ -354,10 +366,13 @@ function outlineFromWalls(
 const CHAIN_STEPS = 2000;
 
 function chain(segments: Segment[], tolerance: number): Segment[] | null {
-  // Try each wall as the start, keeping the longest closed loop found. From each wall end, try
-  // the walls within reach nearest first, and back up when that leads nowhere, such as into a
-  // stray piece that starts at a corner, or back to a corner already passed.
+  // Try each wall as the start, keeping the closed loop around the most floor, and of those the
+  // one using the most walls; a column or cupboard inside the room can have more pieces than the
+  // room. From each wall end, try the walls within reach nearest first, and back up when that
+  // leads nowhere, such as into a stray piece that starts at a corner, or back to a corner
+  // already passed.
   let best = null as Segment[] | null; // Not `: Segment[] | null = null`, which stays null to tsc.
+  let bestArea = 0;
   const used = new Set<number>();
   let steps = 0;
   const extend = (loop: Segment[]) => {
@@ -365,7 +380,12 @@ function chain(segments: Segment[], tolerance: number): Segment[] | null {
     const end = loop.at(-1)!.b;
     // Back where it started: a loop, which goes no further.
     if (loop.length >= 3 && distance(end, loop[0]!.a) <= tolerance) {
-      if (!best || loop.length > best.length) best = [...loop];
+      const area = polygonArea(loop.map(({ a }) => a));
+      const tie = Math.abs(area - bestArea) < 1e-6;
+      if (!best || (tie ? loop.length > best.length : area > bestArea)) {
+        best = [...loop];
+        bestArea = area;
+      }
       return;
     }
     // Back at a corner it turned at well before, as round a loop of stray pieces: the outline
@@ -384,7 +404,6 @@ function chain(segments: Segment[], tolerance: number): Segment[] | null {
       .filter(({ index, gap }) => !used.has(index) && gap <= tolerance)
       .sort((a, b) => a.gap - b.gap);
     for (const { index, flip } of next) {
-      if (best?.length === segments.length) return;
       const segment = segments[index]!;
       used.add(index);
       loop.push(flip ? { a: segment.b, b: segment.a } : segment);
@@ -394,7 +413,6 @@ function chain(segments: Segment[], tolerance: number): Segment[] | null {
     }
   };
   for (let start = 0; start < segments.length; start++) {
-    if (best?.length === segments.length) break;
     steps = 0;
     used.add(start);
     extend([segments[start]!]);
@@ -410,8 +428,8 @@ function corner(first: Segment, second: Segment): Point2 {
   const d2: Point2 = [second.b[0] - second.a[0], second.b[1] - second.a[1]];
   const denominator = d1[0] * d2[1] - d1[1] * d2[0];
   const sine = denominator / (Math.hypot(...d1) * Math.hypot(...d2));
-  // Nearly straight on: the walls don't turn here, so their meeting point will do.
-  if (Math.abs(sine) < Math.sin((10 * Math.PI) / 180)) return meeting;
+  // Nearly straight on, or a wall with no length (a NaN sine): the meeting point will do.
+  if (!(Math.abs(sine) >= Math.sin((10 * Math.PI) / 180))) return meeting;
   const t = ((second.a[0] - first.a[0]) * d2[1] - (second.a[1] - first.a[1]) * d2[0]) / denominator;
   const intersection: Point2 = [first.a[0] + d1[0] * t, first.a[1] + d1[1] * t];
   return distance(intersection, meeting) > 1 ? meeting : intersection;

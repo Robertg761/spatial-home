@@ -170,6 +170,25 @@ describe('several rooms in one session', () => {
   });
 
   test.each([
+    ['merges a window seen from both sides', 0.92, 1],
+    ['keeps two windows one above the other', 1.9, 2],
+  ])('%s', (_, otherHeight, count) => {
+    // A 60 cm window in the bedroom with its sill at 0.6 m, and one seen from the hallway at the
+    // same place along the wall, either the same or 1 m higher up.
+    const scan = twoRooms();
+    const window = (at: Point2, centre: number) => ({
+      kind: 'window' as const,
+      center: toWorld(at, centre, NORTH),
+      width: 0.6,
+      height: 0.6,
+    });
+    scan.rooms[0]!.openings = [window([4, 2], 0.9)];
+    scan.rooms[1]!.openings = [window([4.15, 2], otherHeight)];
+    const { layout } = imported(importScan(scan));
+    expect(layout.openings).toHaveLength(count);
+  });
+
+  test.each([
     ['the doorway', 0],
     ['the door', 1],
   ])('keeps the door when %s is seen first', (_, doorway) => {
@@ -522,6 +541,22 @@ describe('imperfect scans', () => {
     expect(result.notes.map((note) => note.message)).toEqual(
       expect.arrayContaining([expect.stringContaining('left out 3 wall pieces')])
     );
+  });
+
+  test('leaves walls with no length out of the shape around walls that do not join up', () => {
+    const walls = wallsAround(bedroom, 2.4, 0).slice(0, 3);
+    // A wall record with no length, far from the room.
+    walls.push({ start: toWorld([10, 10], 0, 0), end: toWorld([10, 10], 0, 0), height: 2.4 });
+    const result = imported(importScan(session([{ name: 'Study', walls }])));
+    expect(polygonArea(result.layout.rooms[0]!.outline)).toBeLessThan(13);
+  });
+
+  test('refuses a room made only of walls with no length', () => {
+    const walls = bedroom
+      .slice(0, 3)
+      .map((point) => ({ start: toWorld(point, 0, 0), end: toWorld(point, 0, 0), height: 2.4 }));
+    const result = importScan(session([{ name: 'Study', walls }]));
+    expect(result.ok).toBe(false);
   });
 
   test('falls back to the shape around walls that do not join up', () => {

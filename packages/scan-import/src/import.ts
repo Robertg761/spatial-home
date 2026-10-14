@@ -254,9 +254,10 @@ function buildLayout(session: ScanSession, options: ImportOptions): ImportResult
 
   // 6. What each opening leads to, now that every room is in place. A door between two scanned
   //    rooms is seen from both sides, so the second sighting is dropped: one close by, of about the
-  //    same width, and a window if and only if this is one. A door and a doorway can be the same
-  //    opening, as one side may not see the door itself. Each opening kept matches one sighting
-  //    from the other side at most, the nearest.
+  //    same width and height, and a window if and only if this is one. A door and a doorway can be
+  //    the same opening, as one side may not see the door itself. Two windows also need their
+  //    sills within 20 cm, as windows can sit one above the other. Each opening kept matches one
+  //    sighting from the other side at most, the nearest.
   const draft = { rooms };
   const kept: Opening[] = [];
   const paired = new Set<Opening>();
@@ -270,7 +271,11 @@ function buildLayout(session: ScanSession, options: ImportOptions): ImportResult
           other.connects === opening.wall.roomId &&
           other.wall.roomId === connects &&
           (other.kind === 'window') === (opening.kind === 'window') &&
-          Math.min(other.width, opening.width) >= 0.7 * Math.max(other.width, opening.width)
+          alike(other.width, opening.width) &&
+          alike(other.height, opening.height) &&
+          (other.kind !== 'window' ||
+            opening.kind !== 'window' ||
+            Math.abs(other.sillHeight - opening.sillHeight) <= 0.2)
       )
       .map((other) => ({ other, gap: distance(openingCenterOf(rooms, other), center) }))
       .filter(({ gap }) => gap < 0.6)
@@ -414,7 +419,7 @@ function outlineFromWalls(
     warn(
       `${label}: its walls don't join into a closed loop, so its outline is the shape around them. Check it in the editor.`
     );
-    return convexHull(all.flatMap(({ a, b }) => [a, b]));
+    return convexHull(segments.flatMap(({ a, b }) => [a, b]));
   }
   const left = all.length - loop.length;
   if (left > 0) {
@@ -705,6 +710,11 @@ function round(
         ? Math.ceil(steps - 1e-6)
         : Math.round(steps);
   return Number((whole * step).toFixed(4)) + 0;
+}
+
+/** Whether two measurements of one thing are within 30% of each other. */
+function alike(a: number, b: number): boolean {
+  return Math.min(a, b) >= 0.7 * Math.max(a, b);
 }
 
 /** Whether a length survives rounding to centimetres; the layout needs widths and heights above 0. */

@@ -267,6 +267,10 @@ kbd {
   stroke: var(--error);
 }
 
+.opening.flagged-warning .opening-line {
+  stroke: var(--warning);
+}
+
 .opening-preview {
   opacity: 0.55;
   pointer-events: none;

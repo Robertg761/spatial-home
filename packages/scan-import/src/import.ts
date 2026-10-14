@@ -215,7 +215,9 @@ function buildLayout(session: ScanSession, options: ImportOptions): ImportResult
   }
 
   // 6. What each opening leads to, now that every room is in place. A door between two scanned
-  //    rooms is seen from both sides, so the second sighting is dropped.
+  //    rooms is seen from both sides, so the second sighting is dropped: one close by, of about the
+  //    same width, and a window if and only if this is one. A door and a doorway can be the same
+  //    opening, as one side may not see the door itself.
   const draft = { rooms };
   const kept: Opening[] = [];
   for (const opening of openings) {
@@ -225,6 +227,8 @@ function buildLayout(session: ScanSession, options: ImportOptions): ImportResult
       (other) =>
         other.connects === opening.wall.roomId &&
         other.wall.roomId === connects &&
+        (other.kind === 'window') === (opening.kind === 'window') &&
+        Math.min(other.width, opening.width) >= 0.7 * Math.max(other.width, opening.width) &&
         distance(openingCenterOf(rooms, other), center) < 0.6
     );
     if (duplicate) continue;

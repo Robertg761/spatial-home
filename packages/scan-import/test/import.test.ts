@@ -169,6 +169,34 @@ describe('several rooms in one session', () => {
     });
   });
 
+  test('takes a doorway and a door seen from either side for the same opening', () => {
+    // The hallway side didn't see the door leaf, so it reports a doorway.
+    const scan = twoRooms();
+    scan.rooms[1]!.openings = [
+      { kind: 'opening', center: toWorld([4.15, 2.02], 1.03, NORTH), width: 0.78, height: 2.05 },
+    ];
+    const { layout } = imported(importScan(scan));
+    expect(layout.openings.map((opening) => [opening.kind, opening.connects])).toEqual([
+      ['door', 'hallway'],
+    ]);
+  });
+
+  test.each([
+    ['a window', 'window', 'window'],
+    ['a narrower doorway', 'opening', 'passage'],
+  ] as const)('keeps %s just beside a door seen from the other room', (_, kind, expected) => {
+    // A 30 cm wide opening seen from the hallway, ending where the bedroom's door begins.
+    const scan = twoRooms();
+    scan.rooms[1]!.openings = [
+      { kind, center: toWorld([4.15, 1.45], 1.03, NORTH), width: 0.3, height: 1 },
+    ];
+    const { layout } = imported(importScan(scan));
+    expect(layout.openings.map((opening) => [opening.kind, opening.connects])).toEqual([
+      ['door', 'hallway'],
+      [expected, 'bedroom'],
+    ]);
+  });
+
   test('puts rooms on different storeys onto separate floors', () => {
     const { layout } = imported(importScan(twoRooms(2.8)));
     expect(layout.floors).toEqual([

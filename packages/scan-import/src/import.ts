@@ -281,6 +281,7 @@ function buildLayout(session: ScanSession, options: ImportOptions): ImportResult
     opening,
     connects: roomBehindWall(draft, opening.wall.roomId, opening.wall.index, opening.offset),
     center: openingCenterOf(rooms, opening),
+    roomCenter: polygonCentroid(rooms.find((room) => room.id === opening.wall.roomId)!.outline),
   }));
   const dropped = new Set<Sighting>();
   const doors = new Set<Sighting>();
@@ -294,9 +295,8 @@ function buildLayout(session: ScanSession, options: ImportOptions): ImportResult
     const [roomId, otherId] = side.split(' ') as [string, string];
     if (roomId > otherId) continue;
     for (const [one, other] of pairUp(these, sides.get(`${otherId} ${roomId}`) ?? [])) {
-      // Either sighting will do: the one further left on the plan is kept, so that doesn't
-      // depend on the scan order either. A door and a doorway make a door.
-      const [keep, drop] = byPlace(one.center, other.center) <= 0 ? [one, other] : [other, one];
+      // A door and a doorway make a door.
+      const [keep, drop] = keepFirst(one, other) <= 0 ? [one, other] : [other, one];
       dropped.add(drop);
       if (drop.opening.kind === 'door') doors.add(keep);
     }
@@ -424,6 +424,26 @@ interface Sighting {
   opening: Opening;
   connects: string;
   center: Point2;
+  /** The centre of the room it was seen from. */
+  roomCenter: Point2;
+}
+
+/**
+ * Which of two sightings of one opening to keep, negative for the first. Either will do, so it
+ * goes by what was seen, never by ids or scan order: the one further left on the plan, then a door
+ * over a doorway, the wider, the taller, the lower, and last the one seen from the room further
+ * left.
+ */
+function keepFirst(a: Sighting, b: Sighting): number {
+  const sill = ({ opening }: Sighting) => (opening.kind === 'window' ? opening.sillHeight : 0);
+  return (
+    byPlace(a.center, b.center) ||
+    Number(b.opening.kind === 'door') - Number(a.opening.kind === 'door') ||
+    b.opening.width - a.opening.width ||
+    b.opening.height - a.opening.height ||
+    sill(a) - sill(b) ||
+    byPlace(a.roomCenter, b.roomCenter)
+  );
 }
 
 /** How many ways of pairing up sightings to try before settling for the best found. */

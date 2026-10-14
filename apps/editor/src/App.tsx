@@ -52,9 +52,7 @@ export function App() {
   useLayoutEffect(() => draftSaver.save(state.layout), [draftSaver, state.layout]);
   useEffect(() => {
     const onExit = () => {
-      // Inspector fields change the layout when they lose focus, so commit the one being typed in.
-      const active = document.activeElement;
-      if (active instanceof HTMLElement) flushSync(() => active.blur());
+      commitFocusedField();
       draftSaver.flush();
     };
     const onVisibilityChange = () => {
@@ -68,6 +66,17 @@ export function App() {
       draftSaver.flush();
     };
   }, [draftSaver]);
+
+  // Commit a field being typed in before any pointer press is handled. The browser would blur it
+  // only after the press had changed the selection, and with it what the field edits.
+  useEffect(() => {
+    const onPointerDown = (event: PointerEvent) => {
+      const active = document.activeElement;
+      if (!(event.target instanceof Node && active?.contains(event.target))) commitFocusedField();
+    };
+    document.addEventListener('pointerdown', onPointerDown, true);
+    return () => document.removeEventListener('pointerdown', onPointerDown, true);
+  }, []);
 
   useEffect(() => {
     if (!message) return;
@@ -247,4 +256,13 @@ export function App() {
       </aside>
     </div>
   );
+}
+
+/**
+ * Inspector fields change the layout when they lose focus, so this blurs the focused one. It renders
+ * the change before returning, so whatever runs next sees the new layout.
+ */
+function commitFocusedField(): void {
+  const active = document.activeElement;
+  if (active instanceof HTMLElement && active !== document.body) flushSync(() => active.blur());
 }

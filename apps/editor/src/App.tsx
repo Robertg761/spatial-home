@@ -5,7 +5,8 @@ import {
   type HomeLayout,
 } from '@spatial-home/home-model';
 import sample from '@spatial-home/home-model/examples/sample-flat.json';
-import { useEffect, useMemo, useReducer, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from 'react';
+import { flushSync } from 'react-dom';
 import { Inspector } from './components/Inspector.tsx';
 import { IssuesPanel, selectionForIssue } from './components/IssuesPanel.tsx';
 import { PlanView, type Tool } from './components/PlanView.tsx';
@@ -46,19 +47,25 @@ export function App() {
   }, [issues, state.layout]);
 
   // Save the draft shortly after each change rather than on every drag step, and at once when the
-  // page is closed or hidden, as it may not get another chance.
-  useEffect(() => draftSaver.save(state.layout), [draftSaver, state.layout]);
+  // page is closed or hidden, as it may not get another chance. A layout effect, so that a change
+  // rendered with flushSync reaches the saver before flushSync returns.
+  useLayoutEffect(() => draftSaver.save(state.layout), [draftSaver, state.layout]);
   useEffect(() => {
-    const flush = () => draftSaver.flush();
-    const onVisibilityChange = () => {
-      if (document.visibilityState === 'hidden') flush();
+    const onExit = () => {
+      // Inspector fields change the layout when they lose focus, so commit the one being typed in.
+      const active = document.activeElement;
+      if (active instanceof HTMLElement) flushSync(() => active.blur());
+      draftSaver.flush();
     };
-    window.addEventListener('pagehide', flush);
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') onExit();
+    };
+    window.addEventListener('pagehide', onExit);
     document.addEventListener('visibilitychange', onVisibilityChange);
     return () => {
-      window.removeEventListener('pagehide', flush);
+      window.removeEventListener('pagehide', onExit);
       document.removeEventListener('visibilitychange', onVisibilityChange);
-      flush();
+      draftSaver.flush();
     };
   }, [draftSaver]);
 

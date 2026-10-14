@@ -429,16 +429,16 @@ interface Sighting {
 }
 
 /**
- * Which of two sightings of one opening to keep, negative for the first. Either will do, so it
- * goes by what was seen, never by ids or scan order: the one further left on the plan, then a door
- * over a doorway, the wider, the taller, the lower, and last the one seen from the room further
- * left.
+ * Which of two sightings of one opening to keep, negative for the first; also the order sightings
+ * are paired up in. It goes by what was seen, never by ids or scan order: the one further left on
+ * the plan, then a door over a doorway over a window, the wider, the taller, the lower, and last
+ * the one seen from the room further left.
  */
 function keepFirst(a: Sighting, b: Sighting): number {
-  const sill = ({ opening }: Sighting) => (opening.kind === 'window' ? opening.sillHeight : 0);
+  const rank = { door: 0, passage: 1, window: 2 };
   return (
     byPlace(a.center, b.center) ||
-    Number(b.opening.kind === 'door') - Number(a.opening.kind === 'door') ||
+    rank[a.opening.kind] - rank[b.opening.kind] ||
     b.opening.width - a.opening.width ||
     b.opening.height - a.opening.height ||
     sill(a) - sill(b) ||
@@ -449,13 +449,23 @@ function keepFirst(a: Sighting, b: Sighting): number {
 /** How many ways of pairing up sightings to try before settling for the best found. */
 const PAIRING_STEPS = 10_000;
 
+/** How high an opening's bottom is above its floor. */
+function sill({ opening }: Sighting): number {
+  return opening.kind === 'window' ? opening.sillHeight : 0;
+}
+
 /**
  * The pairs of matching sightings from two sides of the walls between two rooms: as many pairs as
- * can be made, and of those, the pairs closest together in total.
+ * can be made, and of those, the pairs closest together in total, counting how far apart their
+ * middles are in height as well as on the plan. Of pairings equally close, the first found wins,
+ * and as the search goes through sightings in order by what was seen, that doesn't depend on the
+ * order of the scan either.
  */
 function pairUp(these: Sighting[], those: Sighting[]): [Sighting, Sighting][] {
-  // In order by position, so the outcome doesn't depend on the order of the scan.
-  const order = (list: Sighting[]) => [...list].sort((a, b) => byPlace(a.center, b.center));
+  const order = (list: Sighting[]) => [...list].sort(keepFirst);
+  const apart = (one: Sighting, other: Sighting) =>
+    distance(one.center, other.center) +
+    Math.abs(sill(one) + one.opening.height / 2 - (sill(other) + other.opening.height / 2));
   const [a, b] = [order(these), order(those)];
   let best: { pairs: [Sighting, Sighting][]; total: number } = { pairs: [], total: 0 };
   const pairs: [Sighting, Sighting][] = [];
@@ -474,7 +484,7 @@ function pairUp(these: Sighting[], those: Sighting[]): [Sighting, Sighting][] {
       if (used.has(other) || !sameOpening(a[i]!, other)) continue;
       used.add(other);
       pairs.push([a[i]!, other]);
-      visit(i + 1, total + distance(a[i]!.center, other.center));
+      visit(i + 1, total + apart(a[i]!, other));
       pairs.pop();
       used.delete(other);
     }

@@ -2,5 +2,5 @@
   "config": {
     "MD013": false,
   },
-  "ignores": ["**/node_modules/**"],
+  "ignores": ["**/node_modules/**", "**/.expo/**"],
 }

@@ -371,6 +371,27 @@ describe('imperfect scans', () => {
     );
   });
 
+  test('leaves out a loop of stray pieces that comes back to a corner', () => {
+    const walls = wallsAround(bedroom, 2.4, 0);
+    // A triangle of pieces hanging off the north-east corner, which a longer loop could take in
+    // on its way round, visiting that corner twice.
+    const triangle: Point2[] = [
+      [4, 3],
+      [4.8, 3.2],
+      [4.4, 3.9],
+    ];
+    triangle.forEach((start, i) => {
+      const end = triangle[(i + 1) % triangle.length]!;
+      walls.push({ start: toWorld(start, 0, 0), end: toWorld(end, 0, 0), height: 1 });
+    });
+    const result = imported(importScan(session([{ name: 'Study', walls }])));
+    expectOutline(result.layout.rooms[0]!.outline, bedroom);
+    expect(result.validation.ok).toBe(true);
+    expect(result.notes.map((note) => note.message)).toEqual(
+      expect.arrayContaining([expect.stringContaining('left out 3 wall pieces')])
+    );
+  });
+
   test('falls back to the shape around walls that do not join up', () => {
     const walls = wallsAround(bedroom, 2.4, 0).slice(0, 3);
     const result = imported(importScan(session([{ name: 'Study', walls }])));

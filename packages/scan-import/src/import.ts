@@ -352,15 +352,25 @@ const CHAIN_STEPS = 2000;
 function chain(segments: Segment[], tolerance: number): Segment[] | null {
   // Try each wall as the start, keeping the longest closed loop found. From each wall end, try
   // the walls within reach nearest first, and back up when that leads nowhere, such as into a
-  // stray piece that starts at a corner. The nearest-first path is always tried in full.
+  // stray piece that starts at a corner, or back to a corner already passed.
   let best = null as Segment[] | null; // Not `: Segment[] | null = null`, which stays null to tsc.
   const used = new Set<number>();
   let steps = 0;
   const extend = (loop: Segment[]) => {
     if (steps++ > CHAIN_STEPS) return;
     const end = loop.at(-1)!.b;
-    const closed = loop.length >= 3 && distance(end, loop[0]!.a) <= tolerance;
-    if (closed && (!best || loop.length > best.length)) best = [...loop];
+    // Back where it started: a loop, which goes no further.
+    if (loop.length >= 3 && distance(end, loop[0]!.a) <= tolerance) {
+      if (!best || loop.length > best.length) best = [...loop];
+      return;
+    }
+    // Back at a corner it turned at well before, as round a loop of stray pieces: the outline
+    // would pinch there. Short walls in a row can end near each other without going round.
+    let along = 0;
+    for (let i = loop.length - 1; i >= 1; i--) {
+      along += distance(loop[i]!.a, loop[i]!.b);
+      if (along > 2 * tolerance && distance(end, loop[i]!.a) <= tolerance) return;
+    }
     const next = segments
       .map((segment, index) => {
         const gapA = distance(end, segment.a);

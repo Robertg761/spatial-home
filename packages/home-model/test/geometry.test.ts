@@ -213,6 +213,18 @@ describe('roomBehindWall', () => {
     expect(roomBehindWall(layout, 'living-room', 1, 2)).toBe('hallway');
     expect(roomBehindWall(layout, 'living-room', 1, 2, 0.1)).toBe('outside');
   });
+
+  test('looks all the way to the thickness it is given', () => {
+    const layout = sampleLayout();
+    // The hallway starts 18 cm past the wall, between the 10 cm steps it is probed at.
+    layout.rooms[2]!.outline = [
+      [5.18, 0],
+      [7, 0],
+      [7, 8],
+      [5.18, 8],
+    ];
+    expect(roomBehindWall(layout, 'living-room', 1, 2, 0.2)).toBe('hallway');
+  });
 });
 
 describe('roomConnections', () => {

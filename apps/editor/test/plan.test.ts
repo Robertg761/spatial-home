@@ -154,6 +154,26 @@ describe('editing', () => {
     expect(moved.openings.find((o) => o.id === 'kitchen-arch')!.connects).toBe(OUTSIDE);
   });
 
+  test('moving an opening along its wall updates where it leads', () => {
+    // The hallway's west wall runs from the kitchen at its start to the living room at its end.
+    const moved = updateOpening(sampleFlat(), 'living-room-door', { offset: 2 });
+    expect(moved.openings.find((o) => o.id === 'living-room-door')!.connects).toBe('kitchen');
+    const handSet = updateOpening(sampleFlat(), 'living-room-door', { connects: 'bathroom' });
+    const kept = updateOpening(handSet, 'living-room-door', { offset: 2 });
+    expect(kept.openings.find((o) => o.id === 'living-room-door')!.connects).toBe('bathroom');
+  });
+
+  test('a room drawn against an outside window is what the window looks into', () => {
+    const { layout, id } = addRoom(sampleFlat(), FLOOR, [
+      [-3, 0],
+      [0, 0],
+      [0, 4],
+      [-3, 4],
+    ]);
+    expect(layout.openings.find((o) => o.id === 'living-room-window')!.connects).toBe(id);
+    expect(layout.openings.find((o) => o.id === 'kitchen-window')!.connects).toBe(OUTSIDE);
+  });
+
   test('switching an opening to a window adds a sill, and back removes it', () => {
     const layout = sampleFlat();
     const asWindow = updateOpening(layout, 'kitchen-door', { kind: 'window' });
@@ -178,6 +198,10 @@ describe('editing', () => {
       expect.arrayContaining(['living-room-door', 'kitchen-arch', 'living-room-window'])
     );
     expect(layout.openings.some((opening) => opening.connects === 'living-room')).toBe(false);
+    // So the openings left still lead to what is behind them.
+    for (const { wall, offset, connects } of layout.openings) {
+      expect(roomAcross(layout, wall.roomId, wall.index, offset)).toBe(connects);
+    }
     expect(layout.fixtures.map((f) => f.id)).not.toContain('sofa');
     expect(layout.devices.map((d) => d.id)).not.toContain('reading-lamp');
     expect(validateLayout(layout).ok).toBe(true);

@@ -1,5 +1,6 @@
 // Edits to a layout made from the floor plan. Every function returns a new layout and leaves the
-// one it was given untouched, so undo can keep the old ones.
+// one it was given untouched, so undo can keep the old ones. Edits that change what is behind an
+// opening also change where it leads, through reconnectOpenings.
 
 import {
   OUTSIDE,
@@ -141,7 +142,7 @@ export function addRoom(
 ): { layout: HomeLayout; id: string } {
   const id = uniqueId(layout, slug(name) || 'room');
   const room: Room = { id, name, floorId, outline, ceilingHeight: DEFAULT_CEILING_HEIGHT };
-  return { layout: { ...layout, rooms: [...layout.rooms, room] }, id };
+  return { layout: reconnectOpenings(layout, { ...layout, rooms: [...layout.rooms, room] }), id };
 }
 
 export type AddOpeningResult = { layout: HomeLayout; id: string } | { error: string };
@@ -201,30 +202,39 @@ export function moveCorner(
   index: number,
   point: Point2
 ): HomeLayout {
-  return reconnectOpenings(
-    layout,
-    updateRoom(layout, roomId, {
-      outline: findRoom(layout, roomId).outline.map((corner, i) => (i === index ? point : corner)),
-    })
-  );
+  return updateRoom(layout, roomId, {
+    outline: findRoom(layout, roomId).outline.map((corner, i) => (i === index ? point : corner)),
+  });
 }
 
 /**
- * Points openings at whatever is behind them now that walls have moved. An opening that led
- * somewhere other than what was behind it before was set by hand, so it is left alone.
+ * Points each opening at whatever is behind it after an edit, as addOpening does for a new one. An
+ * opening that led somewhere other than what was behind it before was set by hand, and one whose
+ * destination the edit itself changed is being set by hand, so those are left alone.
  */
 function reconnectOpenings(before: HomeLayout, after: HomeLayout): HomeLayout {
-  const rooms = new Set(after.rooms.map((room) => room.id));
+  const was = new Map(before.openings.map((opening) => [opening.id, opening]));
   return {
     ...after,
     openings: after.openings.map((opening) => {
-      const { roomId, index } = opening.wall;
-      if (!rooms.has(roomId)) return opening;
-      if (opening.connects !== roomAcross(before, roomId, index, opening.offset)) return opening;
-      const connects = roomAcross(after, roomId, index, opening.offset);
-      return connects === opening.connects ? opening : { ...opening, connects };
+      const old = was.get(opening.id);
+      if (!old || old.connects !== opening.connects || old.connects !== behind(before, old)) {
+        return opening;
+      }
+      const connects = behind(after, opening);
+      return connects === undefined || connects === opening.connects
+        ? opening
+        : { ...opening, connects };
     }),
   };
+}
+
+/** What is behind an opening, or undefined when the room it is in is missing. */
+function behind(layout: HomeLayout, opening: Opening): string | undefined {
+  const { roomId, index } = opening.wall;
+  return layout.rooms.some((room) => room.id === roomId)
+    ? roomAcross(layout, roomId, index, opening.offset)
+    : undefined;
 }
 
 export function updateRoom(
@@ -232,10 +242,10 @@ export function updateRoom(
   roomId: string,
   patch: Partial<Omit<Room, 'id'>>
 ): HomeLayout {
-  return {
+  return reconnectOpenings(layout, {
     ...layout,
     rooms: layout.rooms.map((room) => (room.id === roomId ? { ...room, ...patch } : room)),
-  };
+  });
 }
 
 export interface OpeningPatch {
@@ -258,7 +268,7 @@ export function updateOpening(
   openingId: string,
   patch: OpeningPatch
 ): HomeLayout {
-  return {
+  return reconnectOpenings(layout, {
     ...layout,
     openings: layout.openings.map((opening) => {
       if (opening.id !== openingId) return opening;
@@ -271,7 +281,7 @@ export function updateOpening(
       if (!next.name) delete next.name;
       return next as Opening;
     }),
-  };
+  });
 }
 
 /**

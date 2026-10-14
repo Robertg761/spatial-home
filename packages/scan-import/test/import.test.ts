@@ -169,6 +169,26 @@ describe('several rooms in one session', () => {
     });
   });
 
+  test.each([
+    ['the doorway', 0],
+    ['the door', 1],
+  ])('keeps the door when %s is seen first', (_, doorway) => {
+    // One side saw the door leaf and the other only a doorway; either may come first.
+    const scan = twoRooms();
+    const sighting = (at: Point2, kind: 'door' | 'opening') => ({
+      kind,
+      center: toWorld(at, 1.03, NORTH),
+      width: 0.8,
+      height: 2.05,
+    });
+    scan.rooms[0]!.openings = [sighting([4, 2], doorway === 0 ? 'opening' : 'door')];
+    scan.rooms[1]!.openings = [sighting([4.15, 2.02], doorway === 1 ? 'opening' : 'door')];
+    const { layout } = imported(importScan(scan));
+    expect(layout.openings.map((opening) => [opening.kind, opening.connects])).toEqual([
+      ['door', 'hallway'],
+    ]);
+  });
+
   test('takes a doorway and a door seen from either side for the same opening', () => {
     // The hallway side didn't see the door leaf, so it reports a doorway.
     const scan = twoRooms();
@@ -336,6 +356,43 @@ describe('a guided capture', () => {
   });
 });
 
+describe('outlines that cross themselves', () => {
+  test('become the shape around them', () => {
+    // Corners tapped out of order, as a bow tie.
+    const tapped: Point2[] = [
+      [0, 0],
+      [4, 3],
+      [4, 0],
+      [0, 3],
+    ];
+    const result = imported(
+      importScan(session([{ name: 'Study', outline: tapped.map((p) => toWorld(p, 0, 0)) }]), {
+        alignToWalls: false,
+      })
+    );
+    expectOutline(result.layout.rooms[0]!.outline, bedroom, 0.001);
+    expect(result.validation.ok).toBe(true);
+    expect(result.notes.map((note) => note.message)).toEqual(
+      expect.arrayContaining([expect.stringContaining('crosses itself, so the room is the shape')])
+    );
+  });
+
+  test('are refused when they have no area at all', () => {
+    const inALine: Point2[] = [
+      [0, 0],
+      [2, 0],
+      [4, 0],
+    ];
+    const result = importScan(
+      session([{ name: 'Study', outline: inALine.map((p) => toWorld(p, 0, 0)) }])
+    );
+    expect(result).toEqual({
+      ok: false,
+      errors: ['Study (room 1) has no area: its corners are in a line or on top of each other.'],
+    });
+  });
+});
+
 test('uses a measured ceiling height', () => {
   const result = imported(
     importScan(
@@ -494,6 +551,75 @@ describe('imperfect scans', () => {
     expect(result.layout.openings).toEqual([]);
     expect(result.layout.fixtures).toEqual([]);
     expect(result.notes).toHaveLength(3);
+  });
+
+  test('leaves out sizes under a centimetre, which would round to nothing', () => {
+    const elsewhere = bedroom.map(([x, y]): Point2 => [x + 6, y]);
+    const result = imported(
+      importScan(
+        session([
+          {
+            name: 'Study',
+            ceilingHeight: 0.004,
+            walls: wallsAround(bedroom, 0.003, 0),
+            openings: [
+              { kind: 'door', center: toWorld([1, 0], 1, 0), width: 0.004, height: 2 },
+              { kind: 'window', center: toWorld([0, 1.5], 1.5, 0), width: 1, height: 0.003 },
+            ],
+            objects: [
+              { category: 'table', center: toWorld([2, 1.5], 0.4, 0), size: [1, 0.004, 1], yaw: 0 },
+            ],
+          },
+          { name: 'Den', ceilingHeight: 0.002, walls: wallsAround(elsewhere, 2.4, 0) },
+        ])
+      )
+    );
+    expect(result.validation.ok && result.validation.warnings).toEqual([]);
+    expect(result.layout.rooms.map((room) => room.ceilingHeight)).toEqual([2.5, 2.4]);
+    expect(result.layout.openings).toEqual([]);
+    expect(result.layout.fixtures).toEqual([]);
+    expect(result.notes.map((note) => note.message)).toEqual(
+      expect.arrayContaining([
+        'Study: the ceiling and wall heights in the scan are under a centimetre, so the ceiling is set to 2.5 m.',
+        'Den: the measured ceiling height is under a centimetre, so the tallest wall is used.',
+        'Study: left out a door under a centimetre in size.',
+        'Study: left out a window under a centimetre in size.',
+        'Study: left out a table under a centimetre in size.',
+      ])
+    );
+  });
+
+  test('fits names to the layout', () => {
+    const long = 'Very '.repeat(60) + 'long';
+    const result = imported(
+      importScan(
+        session([
+          {
+            name: long,
+            outline: bedroom.map((point) => toWorld(point, 0, 0)),
+            objects: [
+              { category: long, center: toWorld([1, 1], 0.4, 0), size: [1, 1, 1], yaw: 0 },
+              { category: long, center: toWorld([2, 1], 0.4, 0), size: [1, 1, 1], yaw: 0 },
+            ],
+          },
+          {
+            name: '   ',
+            category: 'office',
+            outline: bedroom.map(([x, y]) => toWorld([x + 6, y], 0, 0)),
+          },
+        ]),
+        { name: ` ${long} ` }
+      )
+    );
+    expect(result.validation.ok).toBe(true);
+    const { layout } = result;
+    // Cut to 200 characters, and then of the space it was cut after.
+    const lengths = [layout.name!, ...layout.rooms, ...layout.fixtures].map((item) =>
+      typeof item === 'string' ? item.length : item.name.length
+    );
+    expect(lengths).toEqual([199, 199, 6, 199, 200]);
+    expect(layout.rooms[1]!.name).toBe('Office');
+    expect(layout.fixtures[1]!.name.endsWith(' 2')).toBe(true);
   });
 
   test('numbers repeated furniture names', () => {

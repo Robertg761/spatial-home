@@ -12,6 +12,9 @@ export const LAYOUT_FORMAT = 'spatial-home/home-layout';
 export const LAYOUT_VERSION = 1;
 /** The id an opening's `connects` uses for the outside of the home. */
 export const OUTSIDE = 'outside';
+/** The longest a name and a fixture's kind may be. */
+export const NAME_MAX_LENGTH = 200;
+export const KIND_MAX_LENGTH = 50;
 
 const IdString = z
   .string()
@@ -21,7 +24,7 @@ const Id = IdString.describe('Unique across every item in the layout.');
 /** A reference to another item's id. */
 const Ref = IdString;
 
-const Name = z.string().min(1).max(200);
+const Name = z.string().min(1).max(NAME_MAX_LENGTH);
 const Length = z.number().positive().describe('Metres, greater than zero.');
 const Distance = z.number().nonnegative().describe('Metres, zero or more.');
 const Bearing = z.number().min(0).lt(360).describe('Degrees clockwise, from 0 up to 360.');
@@ -95,7 +98,7 @@ export const FixtureSchema = z
     kind: z
       .string()
       .min(1)
-      .max(50)
+      .max(KIND_MAX_LENGTH)
       .describe('What it is, such as "bed", "sofa", "armchair", "desk", "table" or "tv".'),
     roomId: Ref.describe('The room it is in.'),
     position: Point2Schema.describe('Centre of the footprint on the plan.'),

@@ -1,6 +1,9 @@
 import {
+  EPSILON,
+  KIND_MAX_LENGTH,
   LAYOUT_FORMAT,
   LAYOUT_VERSION,
+  NAME_MAX_LENGTH,
   isSimplePolygon,
   pointInPolygon,
   polygonArea,
@@ -120,26 +123,51 @@ function buildLayout(session: ScanSession, options: ImportOptions): ImportResult
   const usedIds = new Set<string>(['outside', ...floors.list.map((floor) => floor.id)]);
   const roomIdByIndex = new Map<number, string>();
   for (const room of planned) {
-    const outline = tidyOutline(room.outline.map(place));
+    let outline = tidyOutline(room.outline.map(place));
     const name =
-      room.scan.name ??
-      (room.scan.category ? capitalize(room.scan.category) : `Room ${room.index + 1}`);
+      layoutName(room.scan.name) ??
+      layoutName(capitalize(room.scan.category?.trim() ?? '')) ??
+      `Room ${room.index + 1}`;
     const id = claimId(usedIds, slug(name) || 'room');
     const heights = room.scan.walls.map((wall) => wall.height);
-    const ceilingHeight =
-      room.scan.ceilingHeight ??
-      (heights.length > 0 ? Math.max(...heights) : DEFAULT_CEILING_HEIGHT);
-    if (room.scan.ceilingHeight === undefined && heights.length === 0) {
+    const tallest = heights.length > 0 ? Math.max(...heights) : undefined;
+    // A height under a centimetre would be written as 0, so it counts as not measured.
+    const measured = room.scan.ceilingHeight !== undefined && hasSize(room.scan.ceilingHeight);
+    const fromWalls = tallest !== undefined && hasSize(tallest);
+    const ceilingHeight = measured
+      ? room.scan.ceilingHeight!
+      : fromWalls
+        ? tallest!
+        : DEFAULT_CEILING_HEIGHT;
+    let heightNote: string | undefined;
+    if (!measured && !fromWalls) {
+      heightNote =
+        room.scan.ceilingHeight === undefined && tallest === undefined
+          ? `${name}: the scan has no wall heights, so the ceiling is set to ${DEFAULT_CEILING_HEIGHT} m.`
+          : `${name}: the ceiling and wall heights in the scan are under a centimetre, so the ceiling is set to ${DEFAULT_CEILING_HEIGHT} m.`;
+    } else if (!measured && room.scan.ceilingHeight !== undefined) {
+      heightNote = `${name}: the measured ceiling height is under a centimetre, so the tallest wall is used.`;
+    }
+    if (heightNote) notes.push({ severity: 'info', message: heightNote, room: room.index });
+    // A layout's room can't cross itself, so an outline that does becomes the shape around it.
+    if (!isSimplePolygon(outline)) {
+      outline = tidyOutline(convexHull(outline));
       notes.push({
-        severity: 'info',
-        message: `${name}: the scan has no wall heights, so the ceiling is set to ${DEFAULT_CEILING_HEIGHT} m.`,
+        severity: 'warning',
+        message: `${name}: the scanned outline crosses itself, so the room is the shape around it instead. Check it in the editor.`,
         room: room.index,
       });
     }
-    if (!isSimplePolygon(outline) || polygonArea(outline) < 0.1) {
+    if (!isSimplePolygon(outline) || polygonArea(outline) < EPSILON) {
+      errors.push(
+        `${name} (room ${room.index + 1}) has no area: its corners are in a line or on top of each other.`
+      );
+      continue;
+    }
+    if (polygonArea(outline) < 0.1) {
       notes.push({
         severity: 'warning',
-        message: `${name}: the scanned outline crosses itself or has no area; redraw it in the editor.`,
+        message: `${name}: the scanned outline has almost no area; redraw it in the editor.`,
         room: room.index,
       });
     }
@@ -153,12 +181,22 @@ function buildLayout(session: ScanSession, options: ImportOptions): ImportResult
     });
   }
 
+  if (errors.length > 0) return { ok: false, errors };
+
   // 5. Openings, each on the wall the scanner says it is in, or else the nearest wall of its room.
   const openings: Opening[] = [];
   for (const room of planned) {
     const roomId = roomIdByIndex.get(room.index)!;
     const target = rooms.find((candidate) => candidate.id === roomId)!;
     room.scan.openings.forEach((scanned, openingIndex) => {
+      if (!hasSize(scanned.width) || !hasSize(scanned.height)) {
+        notes.push({
+          severity: 'warning',
+          message: `${target.name}: left out a ${scanned.kind} under a centimetre in size.`,
+          room: room.index,
+        });
+        return;
+      }
       const center = place(toPlan(scanned.center));
       // A named scanned wall is found in the outline by its middle, which is on no other wall.
       const named =
@@ -238,7 +276,14 @@ function buildLayout(session: ScanSession, options: ImportOptions): ImportResult
       .filter(({ gap }) => gap < 0.6)
       .sort((a, b) => a.gap - b.gap);
     if (match) {
-      paired.add(match.other);
+      // A door seen from one side and a doorway from the other is a door whose leaf one side
+      // missed, whichever was seen first.
+      const merged: Opening =
+        opening.kind === 'door' && match.other.kind === 'passage'
+          ? { ...match.other, kind: 'door' }
+          : match.other;
+      kept[kept.indexOf(match.other)] = merged;
+      paired.add(merged);
       continue;
     }
     kept.push({ ...opening, connects });
@@ -259,11 +304,29 @@ function buildLayout(session: ScanSession, options: ImportOptions): ImportResult
   for (const room of planned) {
     const floorId = floors.idFor(room.floorHeight);
     for (const object of room.scan.objects) {
-      const kind = slug(object.category).slice(0, 50) || 'object';
+      const kind = slug(object.category).slice(0, KIND_MAX_LENGTH) || 'object';
       if (kind === 'stairs') {
         notes.push({
           severity: 'info',
           message: 'Left out stairs; they are not part of the layout yet.',
+          room: room.index,
+        });
+        continue;
+      }
+      const label =
+        layoutName(
+          capitalize(
+            object.category
+              .trim()
+              .replace(/([a-z])([A-Z])/g, '$1 $2')
+              .toLowerCase()
+          )
+        ) ?? 'Object';
+      if (!object.size.every(hasSize)) {
+        const roomName = rooms.find((other) => other.id === roomIdByIndex.get(room.index))!.name;
+        notes.push({
+          severity: 'warning',
+          message: `${roomName}: left out a ${label.toLowerCase()} under a centimetre in size.`,
           room: room.index,
         });
         continue;
@@ -276,12 +339,14 @@ function buildLayout(session: ScanSession, options: ImportOptions): ImportResult
         ) ?? rooms.find((candidate) => candidate.id === roomIdByIndex.get(room.index));
       if (!home) continue;
       const [width, height, depth] = object.size;
-      const label = capitalize(object.category.replace(/([a-z])([A-Z])/g, '$1 $2').toLowerCase());
       const count = (fixtureNames.get(label) ?? 0) + 1;
       fixtureNames.set(label, count);
       fixtures.push({
         id: claimId(usedIds, kind),
-        name: count === 1 ? label : `${label} ${count}`,
+        name:
+          count === 1
+            ? label
+            : `${layoutName(label, NAME_MAX_LENGTH - ` ${count}`.length)} ${count}`,
         kind,
         roomId: home.id,
         position,
@@ -305,10 +370,11 @@ function buildLayout(session: ScanSession, options: ImportOptions): ImportResult
     });
   }
 
+  const homeName = layoutName(options.name);
   const layout: HomeLayout = {
     format: LAYOUT_FORMAT,
     version: LAYOUT_VERSION,
-    ...(options.name ? { name: options.name } : {}),
+    ...(homeName ? { name: homeName } : {}),
     site: { northBearing: round(northBearing, 0.1) % 360 },
     floors: floors.list,
     rooms,
@@ -605,6 +671,17 @@ function slug(text: string): string {
     .slice(0, 60);
 }
 
+/** A name as the layout takes it: trimmed and cut to length, or undefined when there's none. */
+function layoutName(text: string | undefined, max = NAME_MAX_LENGTH): string | undefined {
+  // Not cutting a character made of two UTF-16 units in half.
+  const cut = text
+    ?.trim()
+    .slice(0, max)
+    .replace(/[\uD800-\uDBFF]$/, '')
+    .trim();
+  return cut || undefined;
+}
+
 function capitalize(text: string): string {
   return text.charAt(0).toUpperCase() + text.slice(1);
 }
@@ -628,6 +705,11 @@ function round(
         ? Math.ceil(steps - 1e-6)
         : Math.round(steps);
   return Number((whole * step).toFixed(4)) + 0;
+}
+
+/** Whether a length survives rounding to centimetres; the layout needs widths and heights above 0. */
+function hasSize(length: number): boolean {
+  return round(length) > 0;
 }
 
 function normalizeDegrees(degrees: number): number {

@@ -4,10 +4,12 @@
 
 import {
   OUTSIDE,
+  createEmptyLayout,
   distance,
   pointInPolygon,
   roomWalls,
   wallOutwardNormal,
+  type Floor,
   type HomeLayout,
   type Opening,
   type Point2,
@@ -134,15 +136,35 @@ export function roomAcross(
   return roomAt(layout, room.floorId, probe, room.id)?.id ?? OUTSIDE;
 }
 
+/**
+ * Adds a room to a floor. In a layout with no floors, which is valid, the room goes on a new ground
+ * floor like the one a new layout starts with.
+ */
 export function addRoom(
   layout: HomeLayout,
   floorId: string,
   outline: Point2[],
   name = nextRoomName(layout)
 ): { layout: HomeLayout; id: string } {
-  const id = uniqueId(layout, slug(name) || 'room');
-  const room: Room = { id, name, floorId, outline, ceilingHeight: DEFAULT_CEILING_HEIGHT };
-  return { layout: reconnectOpenings(layout, { ...layout, rooms: [...layout.rooms, room] }), id };
+  const ground = layout.floors.length === 0 ? groundFloor(layout) : null;
+  const withFloor = ground ? { ...layout, floors: [ground] } : layout;
+  const id = uniqueId(withFloor, slug(name) || 'room');
+  const room: Room = {
+    id,
+    name,
+    floorId: ground?.id ?? floorId,
+    outline,
+    ceilingHeight: DEFAULT_CEILING_HEIGHT,
+  };
+  return {
+    layout: reconnectOpenings(layout, { ...withFloor, rooms: [...withFloor.rooms, room] }),
+    id,
+  };
+}
+
+function groundFloor(layout: HomeLayout): Floor {
+  const floor = createEmptyLayout().floors[0]!;
+  return { ...floor, id: uniqueId(layout, floor.id) };
 }
 
 export type AddOpeningResult = { layout: HomeLayout; id: string } | { error: string };
@@ -155,10 +177,7 @@ export function addOpening(layout: HomeLayout, kind: OpeningKind, hit: WallHit):
       error: `That wall is ${round(hit.length)} m long, too short for a ${defaults.width} m ${kind}.`,
     };
   }
-  const offset = roundTo(
-    clamp(hit.offset, defaults.width / 2, hit.length - defaults.width / 2),
-    0.01
-  );
+  const offset = fitOffset(roundTo(hit.offset, 0.01), defaults.width, hit.length);
   const id = uniqueId(layout, kind);
   const base = {
     id,
@@ -196,14 +215,35 @@ export function moveRoom(layout: HomeLayout, roomId: string, dx: number, dy: num
   });
 }
 
+/**
+ * Moves one corner of a room. Openings on the two walls that meet there keep their distance from
+ * each wall's other end, which stays put, and slide along if they would run off the wall.
+ */
 export function moveCorner(
   layout: HomeLayout,
   roomId: string,
   index: number,
   point: Point2
 ): HomeLayout {
-  return updateRoom(layout, roomId, {
-    outline: findRoom(layout, roomId).outline.map((corner, i) => (i === index ? point : corner)),
+  const room = findRoom(layout, roomId);
+  const outline = room.outline.map((corner, i) => (i === index ? point : corner));
+  const oldWalls = roomWalls(room);
+  const newWalls = roomWalls({ ...room, outline });
+  // Wall `index` starts at the corner, and the wall before it ends there.
+  const ending = (index + outline.length - 1) % outline.length;
+  return reconnectOpenings(layout, {
+    ...layout,
+    rooms: layout.rooms.map((r) => (r.id === roomId ? { ...r, outline } : r)),
+    openings: layout.openings.map((opening) => {
+      const wall = opening.wall.index;
+      if (opening.wall.roomId !== roomId || (wall !== index && wall !== ending)) return opening;
+      const length = newWalls[wall]!.length;
+      const offset =
+        wall === index
+          ? roundTo(length - (oldWalls[wall]!.length - opening.offset))
+          : opening.offset;
+      return { ...opening, offset: fitOffset(offset, opening.width, length) };
+    }),
   });
 }
 
@@ -279,9 +319,24 @@ export function updateOpening(
         delete next.sillHeight;
       }
       if (!next.name) delete next.name;
+      // A new position or width slides the opening along so it stays on its wall.
+      const room = layout.rooms.find((candidate) => candidate.id === opening.wall.roomId);
+      const wall = room && roomWalls(room)[opening.wall.index];
+      if (wall && (patch.offset !== undefined || patch.width !== undefined)) {
+        next.offset = fitOffset(next.offset as number, next.width as number, wall.length);
+      }
       return next as Opening;
     }),
   });
+}
+
+/**
+ * Where an opening centred at `offset` along a wall must go to stay on it. One wider than the wall
+ * can't, so it goes in the middle, and the layout's checks report it.
+ */
+function fitOffset(offset: number, width: number, length: number): number {
+  const [min, max] = [width / 2, length - width / 2];
+  return max < min ? length / 2 : clamp(offset, min, max);
 }
 
 /**

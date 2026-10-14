@@ -41,11 +41,14 @@ export function editorReducer(state: EditorState, action: EditorAction): EditorS
   switch (action.type) {
     case 'edit': {
       if (action.layout === state.layout) return state;
+      // An edit during a drag, which only the keyboard can make, ends the drag where it is.
+      const { gestureStart: start } = state;
+      const past = start && start !== state.layout ? pushHistory(state.past, start) : state.past;
       return withSelection(
         {
           ...state,
           layout: action.layout,
-          past: pushHistory(state.past, state.layout),
+          past: pushHistory(past, state.layout),
           future: [],
           gestureStart: null,
         },
@@ -59,7 +62,7 @@ export function editorReducer(state: EditorState, action: EditorAction): EditorS
 
     case 'gesture-update':
       // Shown on the plan as it happens, but not in the history until the drag ends.
-      return { ...state, layout: action.layout };
+      return state.gestureStart ? { ...state, layout: action.layout } : state;
 
     case 'gesture-end': {
       const start = state.gestureStart;

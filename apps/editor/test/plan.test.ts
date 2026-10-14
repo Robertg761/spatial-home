@@ -97,6 +97,19 @@ describe('editing', () => {
     expect(validateLayout(result.layout).ok).toBe(true);
   });
 
+  test('an opening added at the end of a slanting wall stays on it', () => {
+    const { layout } = addRoom(createEmptyLayout(), FLOOR, [
+      [0, 0],
+      [3, 2],
+      [0, 2],
+    ]);
+    const length = Math.hypot(3, 2);
+    const hit = { roomId: 'room-1', wallIndex: 0, offset: length, length, distance: 0 };
+    const added = addOpening(layout, 'door', hit);
+    if ('error' in added) throw new Error(added.error);
+    expect(validateLayout(added.layout).ok).toBe(true);
+  });
+
   test('refuses an opening wider than its wall', () => {
     const layout = addRoom(createEmptyLayout(), 'ground-floor', [
       [0, 0],
@@ -172,6 +185,30 @@ describe('editing', () => {
     ]);
     expect(layout.openings.find((o) => o.id === 'living-room-window')!.connects).toBe(id);
     expect(layout.openings.find((o) => o.id === 'kitchen-window')!.connects).toBe(OUTSIDE);
+  });
+
+  test('a new position or width keeps an opening on its wall', () => {
+    const offsetOf = (layout: HomeLayout) =>
+      layout.openings.find((o) => o.id === 'living-room-door')!.offset;
+    // The hallway's west wall is 8 m long, and the door 0.8 m wide.
+    expect(offsetOf(updateOpening(sampleFlat(), 'living-room-door', { offset: 0 }))).toBe(0.4);
+    expect(offsetOf(updateOpening(sampleFlat(), 'living-room-door', { width: 3 }))).toBe(6);
+    expect(offsetOf(updateOpening(sampleFlat(), 'living-room-door', { width: 7 }))).toBe(4.5);
+  });
+
+  test('moving a corner leaves openings where they were on its walls', () => {
+    // The living room's west wall runs from its north-west corner, which moves, to the south-west.
+    const moved = moveCorner(sampleFlat(), 'living-room', 3, [0, 3]);
+    const window = moved.openings.find((o) => o.id === 'living-room-window')!;
+    expect(window.offset).toBe(1);
+    expect(validateLayout(moved).ok).toBe(true);
+    // A wall too short for the window keeps it in the middle, for the checks to report.
+    const short = moveCorner(sampleFlat(), 'living-room', 3, [0, 1]);
+    expect(short.openings.find((o) => o.id === 'living-room-window')!.offset).toBe(0.5);
+    const result = validateLayout(short);
+    expect(result.ok ? [] : result.errors.map((issue) => issue.code)).toEqual([
+      'opening-outside-wall',
+    ]);
   });
 
   test('switching an opening to a window adds a sill, and back removes it', () => {

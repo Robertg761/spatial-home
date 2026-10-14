@@ -1,4 +1,4 @@
-import { createEmptyLayout } from '@spatial-home/home-model';
+import { createEmptyLayout, validateLayout } from '@spatial-home/home-model';
 import { describe, expect, test } from 'vitest';
 import { addOpening, addRoom, deleteItem, moveRoom, nearestWall } from '../src/editor/plan.ts';
 import { editorReducer, initialState, isPristine, type EditorState } from '../src/editor/state.ts';
@@ -72,6 +72,44 @@ describe('editorReducer', () => {
     const again = editorReducer(moved, { type: 'gesture-start' });
     const done = editorReducer(again, { type: 'gesture-end' });
     expect(editorReducer(done, { type: 'undo' }).layout).toBe(state.layout);
+  });
+
+  test('the first room drawn in a layout without floors makes a floor for it', () => {
+    const empty = initialState({ ...createEmptyLayout(), floors: [] });
+    expect(empty.floorId).toBe('');
+    const { layout, id } = addRoom(empty.layout, empty.floorId, square);
+    const drawn = editorReducer(empty, { type: 'edit', layout, select: { kind: 'room', id } });
+    expect(drawn.layout.floors).toEqual(createEmptyLayout().floors);
+    expect(drawn.layout.rooms[0]!.floorId).toBe('ground-floor');
+    expect(drawn.floorId).toBe('ground-floor');
+    expect(validateLayout(drawn.layout).ok).toBe(true);
+    // One step: undo goes back to the layout without floors.
+    expect(editorReducer(drawn, { type: 'undo' }).layout).toBe(empty.layout);
+  });
+
+  test('an edit during a drag ends the drag, keeping both in the history', () => {
+    const { state, id } = withRoom();
+    const started = editorReducer(state, { type: 'gesture-start' });
+    const moved = editorReducer(started, {
+      type: 'gesture-update',
+      layout: moveRoom(state.layout, id, 1, 0),
+    });
+    // Delete pressed while the pointer is still dragging the room.
+    const deleted = editorReducer(moved, {
+      type: 'edit',
+      layout: deleteItem(moved.layout, { kind: 'room', id }),
+      select: null,
+    });
+    expect(deleted.layout.rooms).toHaveLength(0);
+    // The rest of the drag no longer applies.
+    const after = editorReducer(
+      editorReducer(deleted, { type: 'gesture-update', layout: moveRoom(state.layout, id, 2, 0) }),
+      { type: 'gesture-end' }
+    );
+    expect(after.layout).toBe(deleted.layout);
+    const undone = editorReducer(after, { type: 'undo' });
+    expect(undone.layout).toBe(moved.layout);
+    expect(editorReducer(undone, { type: 'undo' }).layout).toBe(state.layout);
   });
 
   test('undo waits until a drag ends', () => {

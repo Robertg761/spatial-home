@@ -62,6 +62,18 @@ describe('editorReducer', () => {
     expect(editorReducer(started, { type: 'gesture-end' }).past).toHaveLength(state.past.length);
   });
 
+  test('a second drag starting during one keeps the first starting point', () => {
+    const { state, id } = withRoom();
+    const started = editorReducer(state, { type: 'gesture-start' });
+    const moved = editorReducer(started, {
+      type: 'gesture-update',
+      layout: moveRoom(state.layout, id, 1, 0),
+    });
+    const again = editorReducer(moved, { type: 'gesture-start' });
+    const done = editorReducer(again, { type: 'gesture-end' });
+    expect(editorReducer(done, { type: 'undo' }).layout).toBe(state.layout);
+  });
+
   test('undo waits until a drag ends', () => {
     const { state } = withRoom();
     const started = editorReducer(state, { type: 'gesture-start' });

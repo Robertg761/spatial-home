@@ -54,7 +54,8 @@ export function editorReducer(state: EditorState, action: EditorAction): EditorS
     }
 
     case 'gesture-start':
-      return { ...state, gestureStart: state.layout };
+      // A drag already under way keeps where it started, so undo still goes back to before it.
+      return state.gestureStart ? state : { ...state, gestureStart: state.layout };
 
     case 'gesture-update':
       // Shown on the plan as it happens, but not in the history until the drag ends.

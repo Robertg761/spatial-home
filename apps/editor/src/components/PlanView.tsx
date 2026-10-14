@@ -169,7 +169,8 @@ export function PlanView({ state, dispatch, tool, flagged, onMessage, fitRequest
 
   const onPointerDown = (event: React.PointerEvent<SVGSVGElement>) => {
     const svg = svgRef.current;
-    if (!svg) return;
+    // A second finger on a touch screen leaves the drag the first one started to finish.
+    if (!svg || drag.current) return;
     const point = toPlan(svg, event.clientX, event.clientY);
 
     if (event.button === 1 || (event.button === 0 && spaceHeld)) {
@@ -317,6 +318,7 @@ export function PlanView({ state, dispatch, tool, flagged, onMessage, fitRequest
         onPointerMove={onPointerMove}
         onPointerUp={endDrag}
         onPointerCancel={endDrag}
+        onLostPointerCapture={endDrag}
         onPointerLeave={() => setCursor(null)}
         onDoubleClick={() => tool === 'room' && draft.length >= 3 && finishRoom(draft)}
         role="application"

@@ -34,8 +34,10 @@ import {
   crossesItself,
   floorArea,
   MIN_ROOM_AREA,
+  refreshCorners,
   wallLengths,
   type CapturedRoom,
+  type PlacedCorner,
 } from '../scan/guided.ts';
 import { formatDistance, parseCeilingHeight, scanHint } from '../scan/hints.ts';
 import { afterAvailability, afterInstall, type Readiness } from '../scan/readiness.ts';
@@ -243,11 +245,23 @@ function Message({
 
 const DEFAULT_CEILING = '2.40';
 
+/** A room scanned in this session, with its corners still anchored. */
+interface ScannedRoom {
+  name: string;
+  corners: PlacedCorner[];
+  ceilingHeight: number;
+}
+
+function capturedRoom(room: ScannedRoom): CapturedRoom {
+  return { ...room, corners: room.corners.map((corner) => corner.point) };
+}
+
 function Scanner() {
   const insets = useSafeAreaInsets();
   const scanner = useRef<ArcoreScannerViewRef>(null);
-  const [rooms, setRooms] = useState<CapturedRoom[]>([]);
-  const [corners, setCorners] = useState<Vector3[]>([]);
+  // Rooms keep their anchored corners until the end, so they all take ARCore's latest corrections.
+  const [rooms, setRooms] = useState<ScannedRoom[]>([]);
+  const [corners, setCorners] = useState<PlacedCorner[]>([]);
   const [roomName, setRoomName] = useState('');
   const [ceiling, setCeiling] = useState(DEFAULT_CEILING);
   const [tracking, setTracking] = useState<TrackingEvent | null>(null);
@@ -259,19 +273,20 @@ function Scanner() {
   const placeholderName = `Room ${rooms.length + 1}`;
 
   const closeRoom = useCallback(
-    (roomCorners: Vector3[]) => {
-      if (roomCorners.length < 3) {
+    (roomCorners: PlacedCorner[]) => {
+      const points = roomCorners.map((corner) => corner.point);
+      if (points.length < 3) {
         Alert.alert('Not a room yet', 'A room needs at least three corners.');
         return;
       }
-      if (floorArea(roomCorners) < MIN_ROOM_AREA) {
+      if (floorArea(points) < MIN_ROOM_AREA) {
         Alert.alert(
           'Not a room yet',
           'These corners hardly enclose any floor. Undo and place them where the walls meet the floor.'
         );
         return;
       }
-      if (crossesItself(roomCorners)) {
+      if (crossesItself(points)) {
         Alert.alert(
           'The walls cross',
           'Two walls cross each other. Undo the last corner and try again.'
@@ -293,29 +308,77 @@ function Scanner() {
     [ceiling, roomName, placeholderName]
   );
 
+  /** The current room's corners, moved to where ARCore puts their anchors now. */
+  const freshCorners = useCallback(async (): Promise<PlacedCorner[]> => {
+    if (corners.length === 0) return corners;
+    const positions = await scanner.current!.getCornerPositionsAsync(corners.map((c) => c.id));
+    return refreshCorners(corners, positions);
+  }, [corners]);
+
   const placeCorner = useCallback(async () => {
-    if (busy) return;
+    if (busy || !scanner.current) return;
     setBusy(true);
     try {
-      const point = await scanner.current?.getAimAsync();
+      const point = await scanner.current.getAimAsync();
       if (!point) {
         Alert.alert('Point at the floor', 'Aim the crosshair where the walls meet the floor.');
         return;
       }
-      const added = addCorner(corners, point);
-      if (added.kind === 'added') setCorners(added.corners);
-      else if (added.kind === 'closes') closeRoom(added.corners);
+      const current = await freshCorners();
+      const added = addCorner(
+        current.map((corner) => corner.point),
+        point
+      );
+      if (added.kind === 'added') {
+        const id = await scanner.current.addCornerAsync(point);
+        setCorners([...current, { id, point }]);
+      } else if (added.kind === 'closes') closeRoom(current);
+      else setCorners(current);
+    } catch (error) {
+      Alert.alert(
+        'Couldn’t place the corner',
+        error instanceof Error ? error.message : String(error)
+      );
     } finally {
       setBusy(false);
     }
-  }, [busy, corners, closeRoom]);
+  }, [busy, freshCorners, closeRoom]);
 
-  const finish = useCallback(() => {
-    setResult(importScan(buildScan(rooms), { name: 'My home' }));
-  }, [rooms]);
+  const undoCorner = useCallback(() => {
+    const last = corners.at(-1);
+    if (!last) return;
+    setCorners(corners.slice(0, -1));
+    void scanner.current?.removeCornersAsync([last.id]).catch(() => {});
+  }, [corners]);
+
+  const finish = useCallback(async () => {
+    if (!scanner.current || busy) return;
+    setBusy(true);
+    try {
+      // Read every room's corners again, so earlier rooms take ARCore's latest corrections too.
+      const all = rooms.flatMap((room) => room.corners);
+      const positions = await scanner.current.getCornerPositionsAsync(all.map((c) => c.id));
+      let next = 0;
+      const updated = rooms.map((room) => {
+        const fresh = refreshCorners(
+          room.corners,
+          positions.slice(next, next + room.corners.length)
+        );
+        next += room.corners.length;
+        return { ...room, corners: fresh };
+      });
+      setRooms(updated);
+      setResult(importScan(buildScan(updated.map(capturedRoom)), { name: 'My home' }));
+    } catch (error) {
+      Alert.alert('Couldn’t finish', error instanceof Error ? error.message : String(error));
+    } finally {
+      setBusy(false);
+    }
+  }, [busy, rooms]);
 
   const View3d = ArcoreScannerView!;
-  const walls = wallLengths(corners, false);
+  const points = corners.map((corner) => corner.point);
+  const walls = wallLengths(points, false);
 
   return (
     <View style={styles.fill}>
@@ -325,7 +388,7 @@ function Scanner() {
         // Paused, not unmounted, while reviewing: a new AR session would start a new world, and
         // the next room wouldn't line up with the ones already scanned.
         active={!result}
-        corners={corners}
+        cornerIds={corners.map((corner) => corner.id)}
         onTrackingChange={(event) => {
           setTracking(event.nativeEvent);
           if (event.nativeEvent.state === 'tracking') setError(null);
@@ -337,10 +400,12 @@ function Scanner() {
       {result ? (
         <View style={styles.reviewSheet}>
           <Review
-            rooms={rooms}
+            rooms={rooms.map(capturedRoom)}
             result={result}
             onScanMore={() => setResult(null)}
             onStartOver={() => {
+              const ids = [...rooms, { corners }].flatMap((room) => room.corners.map((c) => c.id));
+              void scanner.current?.removeCornersAsync(ids).catch(() => {});
               setResult(null);
               setRooms([]);
               setCorners([]);
@@ -358,7 +423,7 @@ function Scanner() {
 
           <View style={[styles.top, { paddingTop: 12 }]}>
             <Text style={styles.hint}>
-              {error ? error.message : scanHint(tracking, aim, corners)}
+              {error ? error.message : scanHint(tracking, aim, points)}
             </Text>
             <Text style={styles.progress}>
               {rooms.length > 0
@@ -391,8 +456,8 @@ function Scanner() {
               <Button
                 label="Undo"
                 kind="secondary"
-                disabled={corners.length === 0}
-                onPress={() => setCorners((current) => current.slice(0, -1))}
+                disabled={busy || corners.length === 0}
+                onPress={undoCorner}
               />
               <Button
                 label="Add corner"
@@ -401,13 +466,27 @@ function Scanner() {
                 onPress={() => void placeCorner()}
               />
               {corners.length >= 3 ? (
-                <Button label="Close room" kind="secondary" onPress={() => closeRoom(corners)} />
+                <Button
+                  label="Close room"
+                  kind="secondary"
+                  disabled={busy}
+                  onPress={() =>
+                    void freshCorners()
+                      .then(closeRoom)
+                      .catch((error: unknown) =>
+                        Alert.alert(
+                          'Couldn’t close the room',
+                          error instanceof Error ? error.message : String(error)
+                        )
+                      )
+                  }
+                />
               ) : (
                 <Button
                   label="Done"
                   kind="secondary"
-                  disabled={rooms.length === 0 || corners.length > 0}
-                  onPress={finish}
+                  disabled={busy || rooms.length === 0 || corners.length > 0}
+                  onPress={() => void finish()}
                 />
               )}
             </View>

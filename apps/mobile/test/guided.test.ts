@@ -7,6 +7,7 @@ import {
   crossesItself,
   MIN_ROOM_AREA,
   floorArea,
+  refreshCorners,
   wallLengths,
   type CapturedRoom,
 } from '../src/scan/guided.ts';
@@ -72,4 +73,15 @@ test('a room whose corners are in a line is caught before import, which would re
   expect(floorArea(inLine)).toBeLessThan(MIN_ROOM_AREA);
   const result = importScan(buildScan([{ name: 'Hall', corners: inLine, ceilingHeight: 2.4 }]));
   expect(result.ok).toBe(false);
+});
+
+test('corners take the positions ARCore reports now, and keep their last one if it has none', () => {
+  const placed = [
+    { id: 1, point: [0, -1.3, 0] as Vector3 },
+    { id: 2, point: [4, -1.3, 0] as Vector3 },
+  ];
+  expect(refreshCorners(placed, [[0.01, -1.3, 0], null])).toEqual([
+    { id: 1, point: [0.01, -1.3, 0] },
+    { id: 2, point: [4, -1.3, 0] },
+  ]);
 });

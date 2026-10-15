@@ -8,9 +8,11 @@ import android.opengl.GLSurfaceView
 import android.opengl.Matrix
 import android.view.WindowManager
 import androidx.core.content.ContextCompat
+import com.google.ar.core.Anchor
 import com.google.ar.core.Camera
 import com.google.ar.core.Config
 import com.google.ar.core.Plane
+import com.google.ar.core.Pose
 import com.google.ar.core.Session
 import com.google.ar.core.TrackingFailureReason
 import com.google.ar.core.TrackingState
@@ -21,10 +23,12 @@ import com.google.ar.core.exceptions.UnavailableArcoreNotInstalledException
 import com.google.ar.core.exceptions.UnavailableDeviceNotCompatibleException
 import com.google.ar.core.exceptions.UnavailableSdkTooOldException
 import expo.modules.kotlin.AppContext
+import expo.modules.kotlin.Promise
 import expo.modules.kotlin.viewevent.EventDispatcher
 import expo.modules.kotlin.views.ExpoView
 import java.util.Collections
 import java.util.WeakHashMap
+import java.util.concurrent.ConcurrentLinkedQueue
 import javax.microedition.khronos.egl.EGLConfig
 import javax.microedition.khronos.opengles.GL10
 import kotlin.math.hypot
@@ -34,8 +38,10 @@ import kotlin.math.hypot
  * where the crosshair at the centre of the screen meets it. It draws the floor, the corners placed
  * so far and the walls between them over the camera image.
  *
- * The corners themselves belong to JavaScript: it asks for the aim point with `getAimAsync`, keeps
- * the list, and passes it back as the `corners` prop to be drawn.
+ * Each corner is an ARCore anchor, so it stays put on the real floor as ARCore refines its map of
+ * the room, rather than keeping coordinates from the frame it was placed in. JavaScript holds the
+ * anchors' ids, passes the current room's as the `cornerIds` prop to be drawn, and reads their
+ * current positions with `getCornerPositionsAsync`.
  */
 class ArcoreScannerView(context: Context, appContext: AppContext) :
   ExpoView(context, appContext), GLSurfaceView.Renderer {
@@ -61,10 +67,14 @@ class ArcoreScannerView(context: Context, appContext: AppContext) :
   @Volatile private var session: Session? = null
   @Volatile private var resumed = false
   @Volatile private var displayChanged = true
-  @Volatile private var corners: List<FloatArray> = emptyList()
+  @Volatile private var cornerIds: List<Int> = emptyList()
   @Volatile private var lastAim: Aim? = null
 
   private var active = false
+  // Only touched on the GL thread, where ARCore wants anchors made and read.
+  private val anchors = LinkedHashMap<Int, Anchor>()
+  private var nextAnchorId = 1
+  private val glJobs = ConcurrentLinkedQueue<(Session) -> Unit>()
   private var textureSession: Session? = null
   private var viewportWidth = 0
   private var viewportHeight = 0
@@ -89,8 +99,51 @@ class ArcoreScannerView(context: Context, appContext: AppContext) :
     if (value) resume() else pause()
   }
 
-  fun setCorners(points: List<List<Double>>) {
-    corners = points.filter { it.size == 3 }.map { floatArrayOf(it[0].toFloat(), it[1].toFloat(), it[2].toFloat()) }
+  fun setCornerIds(ids: List<Int>) {
+    cornerIds = ids
+  }
+
+  /** Anchors a corner at `point` and resolves with its id. */
+  fun addCorner(point: List<Double>, promise: Promise) {
+    if (point.size != 3) {
+      promise.reject("bad-point", "A corner needs x, y and z.", null)
+      return
+    }
+    onGlThread(promise) { session ->
+      val anchor = session.createAnchor(Pose.makeTranslation(point[0].toFloat(), point[1].toFloat(), point[2].toFloat()))
+      val id = nextAnchorId++
+      anchors[id] = anchor
+      promise.resolve(id)
+    }
+  }
+
+  /** Where the corners are now, in the same order, with null for any that no longer exist. */
+  fun cornerPositions(ids: List<Int>, promise: Promise) {
+    onGlThread(promise) {
+      promise.resolve(ids.map { id -> anchors[id]?.pose?.let { listOf(it.tx().toDouble(), it.ty().toDouble(), it.tz().toDouble()) } })
+    }
+  }
+
+  fun removeCorners(ids: List<Int>, promise: Promise) {
+    onGlThread(promise) {
+      ids.forEach { anchors.remove(it)?.detach() }
+      promise.resolve(null)
+    }
+  }
+
+  /** Runs `job` on the GL thread at the next frame. Jobs wait while the session is paused. */
+  private fun onGlThread(promise: Promise, job: (Session) -> Unit) {
+    if (session == null) {
+      promise.reject("no-session", "The AR session hasn't started.", null)
+      return
+    }
+    glJobs.add { current ->
+      try {
+        job(current)
+      } catch (e: Exception) {
+        promise.reject("anchor-failed", e.message ?: e.toString(), e)
+      }
+    }
   }
 
   /** The current aim point as [x, y, z], or null when the crosshair isn't on the floor. */
@@ -195,6 +248,7 @@ class ArcoreScannerView(context: Context, appContext: AppContext) :
       emitError("camera-unavailable", "The camera stopped working.")
       return
     }
+    while (true) glJobs.poll()?.invoke(current) ?: break
 
     background.draw(frame)
     val camera = frame.camera
@@ -213,7 +267,8 @@ class ArcoreScannerView(context: Context, appContext: AppContext) :
     camera.getViewMatrix(viewMatrix, 0)
     Matrix.multiplyMM(viewProjection, 0, projection, 0, viewMatrix, 0)
 
-    val placed = corners
+    // Read from the anchors every frame, so the corners follow ARCore's corrections.
+    val placed = cornerIds.mapNotNull { anchors[it]?.pose }.map { floatArrayOf(it.tx(), it.ty(), it.tz()) }
     val lowest = floorHeightFrom(floors, camera)
     floorHeight = placed.firstOrNull()?.get(1) ?: lowest
     val aim = floorHeight?.let { aimAt(camera, it) }

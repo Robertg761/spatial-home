@@ -15,6 +15,20 @@ export interface CapturedRoom {
   ceilingHeight: number;
 }
 
+/** A corner anchored in the AR session, with where it was when last read. */
+export interface PlacedCorner {
+  id: number;
+  point: Vector3;
+}
+
+/** The corners with their positions as just read, keeping the last known one for any missing. */
+export function refreshCorners(
+  corners: PlacedCorner[],
+  positions: (Vector3 | null)[]
+): PlacedCorner[] {
+  return corners.map((corner, i) => ({ id: corner.id, point: positions[i] ?? corner.point }));
+}
+
 /** Distance along the floor between two points, ignoring height. */
 export function floorDistance(a: Vector3, b: Vector3): number {
   return Math.hypot(b[0] - a[0], b[2] - a[2]);

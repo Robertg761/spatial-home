@@ -59,9 +59,21 @@ class ArcoreScannerModule : Module() {
 
       Prop("active") { view: ArcoreScannerView, active: Boolean -> view.setActive(active) }
 
-      Prop("corners") { view: ArcoreScannerView, corners: List<List<Double>> -> view.setCorners(corners) }
+      Prop("cornerIds") { view: ArcoreScannerView, ids: List<Int> -> view.setCornerIds(ids) }
 
       AsyncFunction("getAimAsync") { view: ArcoreScannerView -> view.aim() }
+
+      AsyncFunction("addCornerAsync") { view: ArcoreScannerView, point: List<Double>, promise: Promise ->
+        view.addCorner(point, promise)
+      }
+
+      AsyncFunction("getCornerPositionsAsync") { view: ArcoreScannerView, ids: List<Int>, promise: Promise ->
+        view.cornerPositions(ids, promise)
+      }
+
+      AsyncFunction("removeCornersAsync") { view: ArcoreScannerView, ids: List<Int>, promise: Promise ->
+        view.removeCorners(ids, promise)
+      }
 
       OnViewDestroys { view: ArcoreScannerView -> view.destroy() }
     }

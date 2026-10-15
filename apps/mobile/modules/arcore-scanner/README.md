@@ -24,9 +24,11 @@ ARCore is declared optional, so the app still installs on phones without it. The
 | `scannerIncluded` | Whether this build has the module. False on iPhone, on the web and in Expo Go. |
 | `getAvailabilityAsync()` | `supported`, `needs-install`, `needs-update`, `unsupported`, or `checking` while ARCore is still finding out. |
 | `requestInstallAsync()` | Opens the Play Store to install or update ARCore. `installed`, `requested` (check again when the app comes back), `declined` or `unsupported`. |
-| `ArcoreScannerView` | The camera view. Props: `active` and `corners`. Events: `onTrackingChange`, `onAim` and `onError`. Its ref has `getAimAsync()`, which gives where the crosshair meets the floor. |
+| `ArcoreScannerView` | The camera view. Props: `active`, and `cornerIds` for the current room's corners. Events: `onTrackingChange`, `onAim` and `onError`. Its ref has `getAimAsync()`, which gives where the crosshair meets the floor, and `addCornerAsync()`, `getCornerPositionsAsync()` and `removeCornersAsync()` for the corners. |
 
 Points are in ARCore's world frame: metres, y up, and the session's starting point as the origin. The room scan format uses the same frame.
+
+Each corner is an ARCore anchor. ARCore keeps refining its map of the room while you scan, and an anchor stays on the same spot of the real floor as it does, while a saved coordinate would drift. So the screen keeps the anchors' ids and reads their positions again before it measures anything or imports the scan.
 
 Every room in one scan has to come from one AR session, so they share that frame. The scan screen keeps the view mounted, and only pauses it, while showing the result. Leaving the screen ends the session, and ARCore may not keep the same origin after the app has been in the background.
 

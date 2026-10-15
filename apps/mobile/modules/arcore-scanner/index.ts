@@ -48,8 +48,8 @@ export interface ScannerError {
 export interface ArcoreScannerViewProps extends ViewProps {
   /** Runs the camera and AR session while true. */
   active: boolean;
-  /** Corners placed so far, drawn joined by walls. */
-  corners: Vector3[];
+  /** The current room's corners, by the ids `addCornerAsync` gave them, drawn joined by walls. */
+  cornerIds: number[];
   onTrackingChange?: (event: NativeSyntheticEvent<TrackingEvent>) => void;
   onAim?: (event: NativeSyntheticEvent<AimEvent>) => void;
   onError?: (event: NativeSyntheticEvent<ScannerError>) => void;
@@ -58,6 +58,14 @@ export interface ArcoreScannerViewProps extends ViewProps {
 export interface ArcoreScannerViewRef {
   /** Where the crosshair meets the floor now, or null when it isn't on the floor. */
   getAimAsync(): Promise<Vector3 | null>;
+  /**
+   * Anchors a corner at `point` and resolves with its id. An anchored corner stays on the same
+   * spot on the floor as ARCore refines its map of the room, so read it again before using it.
+   */
+  addCornerAsync(point: Vector3): Promise<number>;
+  /** Where the corners are now, in the same order, with null for any that were removed. */
+  getCornerPositionsAsync(ids: number[]): Promise<(Vector3 | null)[]>;
+  removeCornersAsync(ids: number[]): Promise<void>;
 }
 
 interface ArcoreScannerNativeModule {

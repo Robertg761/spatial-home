@@ -203,6 +203,142 @@ describe('validateLayout', () => {
     ]);
   });
 
+  describe('openings that overlap', () => {
+    const door = (id: string, offset: number, width = 0.8) => ({
+      kind: 'door' as const,
+      id,
+      wall: { roomId: 'hallway', index: 3 },
+      offset,
+      width,
+      height: 2.1,
+      connects: 'kitchen',
+    });
+
+    test('warns about openings in the same part of a wall, once each, on the later one', () => {
+      // The kitchen door is 0.8 m wide, 2 m along the hallway's wall 3.
+      const result = modified((layout) => {
+        layout.openings.push(door('second-kitchen-door', 2.3), door('third-kitchen-door', 2.1));
+      });
+      expect(result.ok).toBe(true);
+      expect(warningsOf(result)).toEqual([
+        { code: 'opening-overlap', path: ['openings', 9, 'offset'] },
+        { code: 'opening-overlap', path: ['openings', 10, 'offset'] },
+      ]);
+      expect(result.warnings[0]?.message).toContain(
+        '"second-kitchen-door" overlaps "kitchen-door"'
+      );
+    });
+
+    test('accepts openings that only touch, or sit one above the other', () => {
+      const result = modified((layout) => {
+        layout.openings.push(door('next-door', 2.8), {
+          kind: 'window',
+          id: 'fanlight',
+          wall: { roomId: 'hallway', index: 3 },
+          offset: 2,
+          width: 0.8,
+          height: 0.4,
+          sillHeight: 2.1,
+          connects: 'kitchen',
+        });
+      });
+      expect(result.warnings).toEqual([]);
+    });
+
+    test('ignores openings on other walls, and ones already reported as not on a wall', () => {
+      const result = modified((layout) => {
+        // The front door is 1 m along the hallway's wall 0, and this is 1 m along wall 2.
+        layout.openings.push({
+          ...door('back-door', 1),
+          wall: { roomId: 'hallway', index: 2 },
+          connects: 'outside',
+        });
+        layout.openings.push({ ...door('nowhere', 2), wall: { roomId: 'hallway', index: 9 } });
+      });
+      expect(errorsOf(result)).toEqual([
+        { code: 'unknown-wall', path: ['openings', 10, 'wall', 'index'] },
+      ]);
+      expect(result.warnings).toEqual([]);
+    });
+
+    /** Two rooms side by side with a wall `gap` metres thick between them. */
+    function besideEachOther(gap: number, widths: [number, number], offsets = [1.5, 1.5]) {
+      const layout = createEmptyLayout();
+      layout.rooms.push(
+        {
+          id: 'study',
+          name: 'Study',
+          floorId: 'ground-floor',
+          outline: [
+            [0, 0],
+            [4, 0],
+            [4, 3],
+            [0, 3],
+          ],
+          ceilingHeight: 2.5,
+        },
+        {
+          id: 'landing',
+          name: 'Landing',
+          floorId: 'ground-floor',
+          outline: [
+            [4 + gap, 0],
+            [7, 0],
+            [7, 3],
+            [4 + gap, 3],
+          ],
+          ceilingHeight: 2.5,
+        }
+      );
+      // The study's wall 1 and the landing's wall 3 are the two sides of the wall between them,
+      // running opposite ways.
+      layout.openings.push(
+        {
+          kind: 'door',
+          id: 'study-door',
+          wall: { roomId: 'study', index: 1 },
+          offset: offsets[0]!,
+          width: widths[0],
+          height: 2,
+          connects: 'landing',
+        },
+        {
+          kind: 'passage',
+          id: 'landing-doorway',
+          wall: { roomId: 'landing', index: 3 },
+          offset: offsets[1]!,
+          width: widths[1],
+          height: 2,
+          connects: 'study',
+        }
+      );
+      return layout;
+    }
+
+    test.each([
+      ['a shared wall', 0],
+      ['a scanned wall 15 cm thick', 0.15],
+    ])('warns about one opening recorded from both rooms, across %s', (_, gap) => {
+      const result = validateLayout(besideEachOther(gap, [0.8, 1.3]));
+      expect(result.ok).toBe(true);
+      expect(warningsOf(result)).toEqual([
+        { code: 'opening-overlap', path: ['openings', 1, 'offset'] },
+      ]);
+      expect(result.warnings[0]?.message).toContain('recorded from both rooms');
+    });
+
+    test('accepts openings across a wall that are side by side, or lead elsewhere', () => {
+      // 1.5 m along the study's wall is 1.5 m along the landing's, as they run opposite ways; 0.5 m
+      // along the landing's is 2.5 m along the study's.
+      expect(validateLayout(besideEachOther(0, [0.8, 0.8], [1.5, 0.5])).warnings).toEqual([]);
+      const toOutside = besideEachOther(0, [0.8, 1.3]);
+      toOutside.openings[1]!.connects = 'outside';
+      expect(validateLayout(toOutside).warnings).toEqual([]);
+      // Too far apart to be the two sides of one wall.
+      expect(validateLayout(besideEachOther(0.6, [0.8, 1.3])).warnings).toEqual([]);
+    });
+  });
+
   test('returns a structurally valid layout with its errors, for an editor to open', () => {
     const result = modified((layout) => {
       layout.openings[0]!.offset = 1.8;

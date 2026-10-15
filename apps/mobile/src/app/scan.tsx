@@ -24,6 +24,7 @@ import {
   scannerIncluded,
   type AimEvent,
   type ArcoreAvailability,
+  type InstallResult,
   type ArcoreScannerViewRef,
   type ScannerError,
   type TrackingEvent,
@@ -38,15 +39,7 @@ import {
   type CapturedRoom,
 } from '../scan/guided.ts';
 import { formatDistance, parseCeilingHeight, scanHint } from '../scan/hints.ts';
-
-type Readiness =
-  | { kind: 'checking' }
-  | { kind: 'not-android' }
-  | { kind: 'not-included' }
-  | { kind: 'unsupported' }
-  | { kind: 'needs-install'; update: boolean; waiting: boolean }
-  | { kind: 'camera-denied'; canAsk: boolean }
-  | { kind: 'ready' };
+import { afterAvailability, afterInstall, type Readiness } from '../scan/readiness.ts';
 
 const CHECK_INTERVAL = 500;
 const CHECK_ATTEMPTS = 20;
@@ -73,6 +66,36 @@ function useReadiness(): [Readiness, { install(): void; askForCamera(): void }] 
       setReadiness({ kind: 'camera-denied', canAsk: result === PermissionsAndroid.RESULTS.DENIED });
   }, []);
 
+  // ARCore wants to be told whether the person asked for an install: true the first time and when
+  // they tap Install, false when looking again after the Play Store, so a refusal isn't asked twice.
+  const userRequestedInstall = useRef(true);
+
+  const requestInstall = useCallback(
+    async (update: boolean) => {
+      let result: InstallResult;
+      try {
+        result = await requestInstallAsync(userRequestedInstall.current);
+      } catch (error) {
+        Alert.alert(
+          'Couldn’t set up ARCore',
+          error instanceof Error ? error.message : String(error)
+        );
+        setReadiness({ kind: 'needs-install', update, waiting: false });
+        return;
+      }
+      userRequestedInstall.current = result !== 'requested';
+      const next = afterInstall(result, update);
+      if (next !== 'ask-for-camera') {
+        setReadiness(next);
+        return;
+      }
+      const granted = await PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.CAMERA);
+      if (granted) setReadiness({ kind: 'ready' });
+      else await askForCamera();
+    },
+    [askForCamera]
+  );
+
   const check = useCallback(async () => {
     let availability: ArcoreAvailability = 'checking';
     // ARCore can take a moment to find out, the first time, whether it supports this phone.
@@ -80,20 +103,10 @@ function useReadiness(): [Readiness, { install(): void; askForCamera(): void }] 
       if (attempt > 0) await new Promise((resolve) => setTimeout(resolve, CHECK_INTERVAL));
       availability = await getAvailabilityAsync();
     }
-    if (availability === 'supported') {
-      const granted = await PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.CAMERA);
-      if (granted) setReadiness({ kind: 'ready' });
-      else await askForCamera();
-    } else if (availability === 'needs-install' || availability === 'needs-update') {
-      setReadiness({
-        kind: 'needs-install',
-        update: availability === 'needs-update',
-        waiting: false,
-      });
-    } else {
-      setReadiness({ kind: 'unsupported' });
-    }
-  }, [askForCamera]);
+    const next = afterAvailability(availability);
+    if (next === 'request-install') await requestInstall(false);
+    else setReadiness(next);
+  }, [requestInstall]);
 
   useEffect(() => {
     if (Platform.OS === 'android' && scannerIncluded) void check();
@@ -118,21 +131,10 @@ function useReadiness(): [Readiness, { install(): void; askForCamera(): void }] 
   }, [check]);
 
   const install = useCallback(async () => {
-    try {
-      const result = await requestInstallAsync();
-      if (result === 'installed') await check();
-      else if (result === 'requested') {
-        setReadiness((current) =>
-          current.kind === 'needs-install' ? { ...current, waiting: true } : current
-        );
-      } else if (result === 'unsupported') setReadiness({ kind: 'unsupported' });
-    } catch (error) {
-      Alert.alert(
-        'Couldn’t install ARCore',
-        error instanceof Error ? error.message : String(error)
-      );
-    }
-  }, [check]);
+    const update = current.current.kind === 'needs-install' && current.current.update;
+    userRequestedInstall.current = true;
+    await requestInstall(update);
+  }, [requestInstall]);
 
   return [readiness, { install: () => void install(), askForCamera: () => void askForCamera() }];
 }

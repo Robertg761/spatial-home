@@ -29,18 +29,19 @@ class ArcoreScannerModule : Module() {
     }
 
     /**
-     * Asks the user to install or update Google Play Services for AR. "installed" when it's ready,
-     * "requested" when the Play Store has opened (check again when the app returns), "declined",
-     * or "unsupported".
+     * Makes sure Google Play Services for AR is ready, installing or updating it if needed. ARCore
+     * wants this before every session, even when it's installed, since it also fetches the phone's
+     * calibration data. "installed" when it's ready, "requested" when an install has started (check
+     * again when the app returns, with userRequested false), "declined", or "unsupported".
      */
-    AsyncFunction("requestInstallAsync") { promise: Promise ->
+    AsyncFunction("requestInstallAsync") { userRequested: Boolean, promise: Promise ->
       val activity = appContext.currentActivity
       if (activity == null) {
         promise.reject("no-activity", "The app isn't in the foreground.", null)
         return@AsyncFunction
       }
       try {
-        when (ArCoreApk.getInstance().requestInstall(activity, true)) {
+        when (ArCoreApk.getInstance().requestInstall(activity, userRequested)) {
           ArCoreApk.InstallStatus.INSTALLED -> promise.resolve("installed")
           else -> promise.resolve("requested")
         }

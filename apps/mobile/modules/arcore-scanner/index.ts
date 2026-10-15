@@ -60,7 +60,7 @@ export interface ArcoreScannerViewRef {
 
 interface ArcoreScannerNativeModule {
   getAvailabilityAsync(): Promise<ArcoreAvailability>;
-  requestInstallAsync(): Promise<InstallResult>;
+  requestInstallAsync(userRequested: boolean): Promise<InstallResult>;
 }
 
 // Absent on iPhone, on the web and in Expo Go, which can't load custom native code.
@@ -73,8 +73,13 @@ export function getAvailabilityAsync(): Promise<ArcoreAvailability> {
   return native ? native.getAvailabilityAsync() : Promise.resolve('unsupported');
 }
 
-export function requestInstallAsync(): Promise<InstallResult> {
-  return native ? native.requestInstallAsync() : Promise.resolve('unsupported');
+/**
+ * Asks ARCore whether it's ready, installing or updating it if needed. Call it before every scan,
+ * even when it's installed. `userRequested` is true the first time and when the person asks for an
+ * install, and false when checking again after the Play Store.
+ */
+export function requestInstallAsync(userRequested = true): Promise<InstallResult> {
+  return native ? native.requestInstallAsync(userRequested) : Promise.resolve('unsupported');
 }
 
 export const ArcoreScannerView: ComponentType<

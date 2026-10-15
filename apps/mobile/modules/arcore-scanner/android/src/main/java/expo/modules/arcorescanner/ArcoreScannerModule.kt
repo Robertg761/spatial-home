@@ -63,10 +63,8 @@ class ArcoreScannerModule : Module() {
 
       Prop("cornerIds") { view: ArcoreScannerView, ids: List<Int> -> view.setCornerIds(ids) }
 
-      AsyncFunction("getAimAsync") { view: ArcoreScannerView -> view.aim() }
-
-      AsyncFunction("addCornerAsync") { view: ArcoreScannerView, point: List<Double>, promise: Promise ->
-        view.addCorner(point, promise)
+      AsyncFunction("anchorAimAsync") { view: ArcoreScannerView, ids: List<Int>, promise: Promise ->
+        view.anchorAim(ids, promise)
       }
 
       AsyncFunction("getCornerPositionsAsync") { view: ArcoreScannerView, ids: List<Int>, promise: Promise ->

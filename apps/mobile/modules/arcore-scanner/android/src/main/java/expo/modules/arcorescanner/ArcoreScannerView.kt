@@ -69,7 +69,6 @@ class ArcoreScannerView(context: Context, appContext: AppContext) :
   @Volatile private var resumed = false
   @Volatile private var displayChanged = true
   @Volatile private var cornerIds: List<Int> = emptyList()
-  @Volatile private var lastAim: Aim? = null
   // Set on the GL thread when ARCore loses the camera, so the frames that follow don't retry it.
   @Volatile private var cameraLost = false
 
@@ -100,7 +99,10 @@ class ArcoreScannerView(context: Context, appContext: AppContext) :
   /** Where the crosshair meets the floor, in world coordinates. */
   private data class Aim(val x: Float, val y: Float, val z: Float)
 
-  private class GlJob(val promise: Promise, val run: (Session) -> Unit)
+  /** What a frame found, for the jobs that run at its end. Null fields when it wasn't tracking. */
+  private class FrameState(val aim: Aim?, val lowestFloor: Float?)
+
+  private class GlJob(val promise: Promise, val run: (Session, FrameState) -> Unit)
 
   fun setActive(value: Boolean) {
     active = value
@@ -111,39 +113,56 @@ class ArcoreScannerView(context: Context, appContext: AppContext) :
     cornerIds = ids
   }
 
-  /** Anchors a corner at `point` and resolves with its id. */
-  fun addCorner(point: List<Double>, promise: Promise) {
-    if (point.size != 3) {
-      promise.reject("bad-point", "A corner needs x, y and z.", null)
-      return
-    }
-    onGlThread(promise) { session ->
-      val anchor = session.createAnchor(Pose.makeTranslation(point[0].toFloat(), point[1].toFloat(), point[2].toFloat()))
+  /**
+   * Anchors a corner where the crosshair meets the floor, in the frame that found that point: a
+   * coordinate kept for a later frame could be in a world ARCore has since corrected. Resolves with
+   * null when the crosshair isn't on the floor. Otherwise it gives the new anchor's id and point,
+   * plus the positions of the room's corners `ids` and whether they're raised, all from that same
+   * frame, so JavaScript can decide what the tap does without mixing frames.
+   */
+  fun anchorAim(ids: List<Int>, promise: Promise) {
+    onGlThread(promise) { session, frame ->
+      val aim = frame.aim
+      if (aim == null) {
+        promise.resolve(null)
+        return@onGlThread
+      }
+      val anchor = session.createAnchor(Pose.makeTranslation(aim.x, aim.y, aim.z))
       val id = nextAnchorId++
       anchors[id] = anchor
-      promise.resolve(id)
+      val corners = ids.map { anchors[it]?.pose }
+      val first = corners.firstOrNull()
+      val lowest = frame.lowestFloor
+      promise.resolve(
+        mapOf(
+          "id" to id,
+          "point" to listOf(aim.x.toDouble(), aim.y.toDouble(), aim.z.toDouble()),
+          "corners" to corners.map { it?.let { pose -> listOf(pose.tx().toDouble(), pose.ty().toDouble(), pose.tz().toDouble()) } },
+          "cornersRaised" to (first != null && lowest != null && first.ty() - lowest > MIN_FLOOR_DROP)
+        )
+      )
     }
   }
 
   /** Where the corners are now, in the same order, with null for any that no longer exist. */
   fun cornerPositions(ids: List<Int>, promise: Promise) {
-    onGlThread(promise) {
+    onGlThread(promise) { _, _ ->
       promise.resolve(ids.map { id -> anchors[id]?.pose?.let { listOf(it.tx().toDouble(), it.ty().toDouble(), it.tz().toDouble()) } })
     }
   }
 
   fun removeCorners(ids: List<Int>, promise: Promise) {
-    onGlThread(promise) {
+    onGlThread(promise) { _, _ ->
       ids.forEach { anchors.remove(it)?.detach() }
       promise.resolve(null)
     }
   }
 
   /**
-   * Runs `job` on the GL thread at the next frame. It fails rather than waits when the session isn't
-   * running, so JavaScript never waits on a frame that won't come.
+   * Runs `job` on the GL thread at the end of the next frame. It fails rather than waits when the
+   * session isn't running, so JavaScript never waits on a frame that won't come.
    */
-  private fun onGlThread(promise: Promise, job: (Session) -> Unit) {
+  private fun onGlThread(promise: Promise, job: (Session, FrameState) -> Unit) {
     if (!resumed) {
       promise.reject("not-running", NOT_RUNNING, null)
       return
@@ -153,11 +172,11 @@ class ArcoreScannerView(context: Context, appContext: AppContext) :
     if (!resumed) failPendingJobs()
   }
 
-  private fun runPendingJobs(session: Session) {
+  private fun runPendingJobs(session: Session, frame: FrameState) {
     while (true) {
       val job = glJobs.poll() ?: break
       try {
-        job.run(session)
+        job.run(session, frame)
       } catch (e: Exception) {
         job.promise.reject("anchor-failed", e.message ?: e.toString(), e)
       }
@@ -167,9 +186,6 @@ class ArcoreScannerView(context: Context, appContext: AppContext) :
   private fun failPendingJobs() {
     while (true) glJobs.poll()?.promise?.reject("not-running", NOT_RUNNING, null) ?: break
   }
-
-  /** The current aim point as [x, y, z], or null when the crosshair isn't on the floor. */
-  fun aim(): List<Double>? = lastAim?.let { listOf(it.x.toDouble(), it.y.toDouble(), it.z.toDouble()) }
 
   fun onHostResume() {
     hostPaused = false
@@ -231,9 +247,8 @@ class ArcoreScannerView(context: Context, appContext: AppContext) :
     session?.pause()
     // The GL thread has stopped, so nothing else takes jobs off the queue.
     failPendingJobs()
-    // The aim belongs to the last frame. After a pause ARCore may relocalise, so nothing from
-    // before it can be placed: JavaScript hears tracking has stopped until a fresh frame says so.
-    lastAim = null
+    // After a pause ARCore may relocalise: JavaScript hears tracking has stopped until a fresh frame
+    // says so.
     lastTracking = ""
     post { onTrackingChange(mapOf("state" to "stopped", "reason" to "none", "floorFound" to false)) }
   }
@@ -320,13 +335,10 @@ class ArcoreScannerView(context: Context, appContext: AppContext) :
     } catch (e: SessionPausedException) {
       return
     } catch (e: CameraNotAvailableException) {
-      lastAim = null
       cameraLost = true
       post { onCameraLost() }
       return
     }
-    runPendingJobs(current)
-
     background.draw(frame)
     val camera = frame.camera
     val floors = current.getAllTrackables(Plane::class.java).filter {
@@ -336,7 +348,7 @@ class ArcoreScannerView(context: Context, appContext: AppContext) :
     }
     reportTracking(camera, floors.isNotEmpty())
     if (camera.trackingState != TrackingState.TRACKING) {
-      lastAim = null
+      runPendingJobs(current, FrameState(null, null))
       return
     }
 
@@ -349,13 +361,13 @@ class ArcoreScannerView(context: Context, appContext: AppContext) :
     val lowest = floorHeightFrom(floors, camera)
     floorHeight = placed.firstOrNull()?.get(1) ?: lowest
     val aim = floorHeight?.let { aimAt(camera, it) }
-    lastAim = aim
     // The corners went on a table or bed found before the floor was.
     val cornersRaised = placed.isNotEmpty() && lowest != null && placed[0][1] - lowest > MIN_FLOOR_DROP
 
     drawFloors(floors)
     drawCorners(placed, aim)
     reportAim(aim, placed, cornersRaised)
+    runPendingJobs(current, FrameState(aim, lowest))
   }
 
   /**

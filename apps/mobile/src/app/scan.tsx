@@ -357,20 +357,26 @@ function Scanner() {
             Alert.alert('Corners on furniture', RAISED_MESSAGE);
             return;
           }
-          const point = await scanner.current.getAimAsync();
-          if (!point) {
+          // Anchored first, in the frame that found the aim, then kept only if the tap adds a corner.
+          const shot = await scanner.current.anchorAimAsync(corners.map((c) => c.id));
+          if (!shot) {
             Alert.alert('Point at the floor', 'Aim the crosshair where the walls meet the floor.');
             return;
           }
-          const current = await freshCorners();
-          const added = addCorner(
-            current.map((corner) => corner.point),
-            point
-          );
-          if (added.kind === 'added') {
-            const id = await scanner.current.addCornerAsync(point);
-            setCorners([...current, { id, point }]);
-          } else if (added.kind === 'closes') closeRoom(current);
+          const current = refreshCorners(corners, shot.corners);
+          const added = shot.cornersRaised
+            ? null
+            : addCorner(
+                current.map((corner) => corner.point),
+                shot.point
+              );
+          if (added?.kind === 'added') {
+            setCorners([...current, { id: shot.id, point: shot.point }]);
+            return;
+          }
+          await scanner.current.removeCornersAsync([shot.id]);
+          if (!added) Alert.alert('Corners on furniture', RAISED_MESSAGE);
+          else if (added.kind === 'closes') closeRoom(current);
           else setCorners(current);
         } catch (error) {
           Alert.alert(
@@ -379,7 +385,7 @@ function Scanner() {
           );
         }
       }),
-    [exclusively, freshCorners, closeRoom]
+    [exclusively, corners, closeRoom]
   );
 
   const closeCurrentRoom = useCallback(

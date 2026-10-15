@@ -48,21 +48,31 @@ export interface ScannerError {
 export interface ArcoreScannerViewProps extends ViewProps {
   /** Runs the camera and AR session while true. */
   active: boolean;
-  /** The current room's corners, by the ids `addCornerAsync` gave them, drawn joined by walls. */
+  /** The current room's corners, by the ids `anchorAimAsync` gave them, drawn joined by walls. */
   cornerIds: number[];
   onTrackingChange?: (event: NativeSyntheticEvent<TrackingEvent>) => void;
   onAim?: (event: NativeSyntheticEvent<AimEvent>) => void;
   onError?: (event: NativeSyntheticEvent<ScannerError>) => void;
 }
 
+/** A corner anchored at the crosshair, with the room as the same frame saw it. */
+export interface AnchoredAim {
+  /** The new anchor's id. */
+  id: number;
+  point: Vector3;
+  /** The positions of the corners asked about, in order, with null for any that were removed. */
+  corners: (Vector3 | null)[];
+  /** Whether those corners are on furniture above the floor found since. */
+  cornersRaised: boolean;
+}
+
 export interface ArcoreScannerViewRef {
-  /** Where the crosshair meets the floor now, or null when it isn't on the floor. */
-  getAimAsync(): Promise<Vector3 | null>;
   /**
-   * Anchors a corner at `point` and resolves with its id. An anchored corner stays on the same
+   * Anchors a corner where the crosshair meets the floor, in the frame that found that point, or
+   * resolves with null when the crosshair isn't on the floor. An anchored corner stays on the same
    * spot on the floor as ARCore refines its map of the room, so read it again before using it.
    */
-  addCornerAsync(point: Vector3): Promise<number>;
+  anchorAimAsync(cornerIds: number[]): Promise<AnchoredAim | null>;
   /** Where the corners are now, in the same order, with null for any that were removed. */
   getCornerPositionsAsync(ids: number[]): Promise<(Vector3 | null)[]>;
   removeCornersAsync(ids: number[]): Promise<void>;

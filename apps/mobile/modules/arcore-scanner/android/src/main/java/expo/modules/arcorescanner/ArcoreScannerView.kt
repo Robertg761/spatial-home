@@ -74,6 +74,7 @@ class ArcoreScannerView(context: Context, appContext: AppContext) :
   @Volatile private var cameraLost = false
 
   private var hostPaused = false
+  private var cameraRetryPending = false
 
   private var active = false
   // Only touched on the GL thread, where ARCore wants anchors made and read.
@@ -216,6 +217,7 @@ class ArcoreScannerView(context: Context, appContext: AppContext) :
       emitError("device-not-supported", "This phone doesn't support ARCore.")
     } catch (e: CameraNotAvailableException) {
       emitError("camera-unavailable", "The camera is in use by another app.")
+      retryCamera()
     } catch (e: Exception) {
       emitError("unknown", e.message ?: e.toString())
     }
@@ -247,11 +249,17 @@ class ArcoreScannerView(context: Context, appContext: AppContext) :
     retryCamera()
   }
 
+  /**
+   * Tries the camera again shortly, on the main thread. A resume that finds the camera still taken
+   * schedules the next try, so this keeps going until the camera is free, the app goes to the
+   * background, or the view goes away.
+   */
   private fun retryCamera() {
+    if (cameraRetryPending) return
+    cameraRetryPending = true
     postDelayed({
-      if (!active || hostPaused || resumed || !instances.contains(this)) return@postDelayed
-      resume()
-      if (!resumed) retryCamera()
+      cameraRetryPending = false
+      if (active && !hostPaused && !resumed && instances.contains(this)) resume()
     }, CAMERA_RETRY_MS)
   }
 

@@ -14,7 +14,8 @@ class ArcoreScannerModule : Module() {
 
     /**
      * Whether this phone can run ARCore: "supported", "needs-install", "needs-update",
-     * "unsupported", or "checking" while ARCore is still finding out (ask again shortly).
+     * "unsupported", "checking" while ARCore is still finding out (ask again shortly), or "unknown"
+     * when it couldn't find out, such as when the check timed out offline (worth trying again).
      */
     AsyncFunction("getAvailabilityAsync") {
       val context = appContext.reactContext ?: return@AsyncFunction "checking"
@@ -24,7 +25,8 @@ class ArcoreScannerModule : Module() {
         ArCoreApk.Availability.SUPPORTED_NOT_INSTALLED -> "needs-install"
         ArCoreApk.Availability.SUPPORTED_APK_TOO_OLD -> "needs-update"
         ArCoreApk.Availability.UNSUPPORTED_DEVICE_NOT_CAPABLE -> "unsupported"
-        else -> if (availability.isTransient) "checking" else "unsupported"
+        // UNKNOWN_ERROR and UNKNOWN_TIMED_OUT say nothing about the phone itself.
+        else -> if (availability.isTransient) "checking" else "unknown"
       }
     }
 

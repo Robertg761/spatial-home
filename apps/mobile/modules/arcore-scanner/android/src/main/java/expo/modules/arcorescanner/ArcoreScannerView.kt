@@ -70,12 +70,16 @@ class ArcoreScannerView(context: Context, appContext: AppContext) :
   @Volatile private var displayChanged = true
   @Volatile private var cornerIds: List<Int> = emptyList()
   @Volatile private var lastAim: Aim? = null
+  // Set on the GL thread when ARCore loses the camera, so the frames that follow don't retry it.
+  @Volatile private var cameraLost = false
+
+  private var hostPaused = false
 
   private var active = false
   // Only touched on the GL thread, where ARCore wants anchors made and read.
   private val anchors = LinkedHashMap<Int, Anchor>()
   private var nextAnchorId = 1
-  private val glJobs = ConcurrentLinkedQueue<(Session) -> Unit>()
+  private val glJobs = ConcurrentLinkedQueue<GlJob>()
   private var textureSession: Session? = null
   private var viewportWidth = 0
   private var viewportHeight = 0
@@ -94,6 +98,8 @@ class ArcoreScannerView(context: Context, appContext: AppContext) :
 
   /** Where the crosshair meets the floor, in world coordinates. */
   private data class Aim(val x: Float, val y: Float, val z: Float)
+
+  private class GlJob(val promise: Promise, val run: (Session) -> Unit)
 
   fun setActive(value: Boolean) {
     active = value
@@ -132,32 +138,52 @@ class ArcoreScannerView(context: Context, appContext: AppContext) :
     }
   }
 
-  /** Runs `job` on the GL thread at the next frame. Jobs wait while the session is paused. */
+  /**
+   * Runs `job` on the GL thread at the next frame. It fails rather than waits when the session isn't
+   * running, so JavaScript never waits on a frame that won't come.
+   */
   private fun onGlThread(promise: Promise, job: (Session) -> Unit) {
-    if (session == null) {
-      promise.reject("no-session", "The AR session hasn't started.", null)
+    if (!resumed) {
+      promise.reject("not-running", NOT_RUNNING, null)
       return
     }
-    glJobs.add { current ->
+    glJobs.add(GlJob(promise, job))
+    // The session may have paused since the check, after it failed the jobs already waiting.
+    if (!resumed) failPendingJobs()
+  }
+
+  private fun runPendingJobs(session: Session) {
+    while (true) {
+      val job = glJobs.poll() ?: break
       try {
-        job(current)
+        job.run(session)
       } catch (e: Exception) {
-        promise.reject("anchor-failed", e.message ?: e.toString(), e)
+        job.promise.reject("anchor-failed", e.message ?: e.toString(), e)
       }
     }
+  }
+
+  private fun failPendingJobs() {
+    while (true) glJobs.poll()?.promise?.reject("not-running", NOT_RUNNING, null) ?: break
   }
 
   /** The current aim point as [x, y, z], or null when the crosshair isn't on the floor. */
   fun aim(): List<Double>? = lastAim?.let { listOf(it.x.toDouble(), it.y.toDouble(), it.z.toDouble()) }
 
   fun onHostResume() {
+    hostPaused = false
     if (active) resume()
   }
 
-  fun onHostPause() = pause()
+  fun onHostPause() {
+    hostPaused = true
+    pause()
+  }
 
   fun destroy() {
+    active = false
     pause()
+    failPendingJobs()
     session?.close()
     session = null
     instances.remove(this)
@@ -175,6 +201,7 @@ class ArcoreScannerView(context: Context, appContext: AppContext) :
         session = it
       }
       current.resume()
+      cameraLost = false
       surface.onResume()
       displayManager.registerDisplayListener(displayListener, null)
       resumed = true
@@ -200,11 +227,32 @@ class ArcoreScannerView(context: Context, appContext: AppContext) :
     displayManager.unregisterDisplayListener(displayListener)
     surface.onPause()
     session?.pause()
+    // The GL thread has stopped, so nothing else takes jobs off the queue.
+    failPendingJobs()
     // The aim belongs to the last frame. After a pause ARCore may relocalise, so nothing from
     // before it can be placed: JavaScript hears tracking has stopped until a fresh frame says so.
     lastAim = null
     lastTracking = ""
     post { onTrackingChange(mapOf("state" to "stopped", "reason" to "none", "floorFound" to false)) }
+  }
+
+  /**
+   * ARCore lost the camera mid-session, usually to another app. Stop as for a pause, so JavaScript
+   * hears tracking has stopped and nothing waits on a frame, then try again until the camera is
+   * free. Coming back to the app tries again too.
+   */
+  private fun onCameraLost() {
+    pause()
+    emitError("camera-unavailable", "The camera stopped working. Scanning picks up again once it’s free.")
+    retryCamera()
+  }
+
+  private fun retryCamera() {
+    postDelayed({
+      if (!active || hostPaused || resumed || !instances.contains(this)) return@postDelayed
+      resume()
+      if (!resumed) retryCamera()
+    }, CAMERA_RETRY_MS)
   }
 
   // A 180° turn changes neither the view's size nor the configuration, so only a display listener
@@ -249,7 +297,7 @@ class ArcoreScannerView(context: Context, appContext: AppContext) :
   override fun onDrawFrame(gl: GL10?) {
     GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT or GLES20.GL_DEPTH_BUFFER_BIT)
     val current = session ?: return
-    if (!resumed) return
+    if (!resumed || cameraLost) return
     if (textureSession !== current) {
       current.setCameraTextureName(background.textureId)
       textureSession = current
@@ -264,10 +312,12 @@ class ArcoreScannerView(context: Context, appContext: AppContext) :
     } catch (e: SessionPausedException) {
       return
     } catch (e: CameraNotAvailableException) {
-      emitError("camera-unavailable", "The camera stopped working.")
+      lastAim = null
+      cameraLost = true
+      post { onCameraLost() }
       return
     }
-    while (true) glJobs.poll()?.invoke(current) ?: break
+    runPendingJobs(current)
 
     background.draw(frame)
     val camera = frame.camera
@@ -442,6 +492,8 @@ class ArcoreScannerView(context: Context, appContext: AppContext) :
     /** The smallest plane, in square metres, that counts as the floor rather than a patch of it. */
     private const val MIN_FLOOR_AREA = 0.25f
     private const val AIM_EVENT_INTERVAL_MS = 150L
+    private const val CAMERA_RETRY_MS = 2000L
+    private const val NOT_RUNNING = "The camera isn’t running. Wait for it to start again."
     private val FLOOR_COLOR = floatArrayOf(1f, 1f, 1f, 0.35f)
     private val WALL_COLOR = floatArrayOf(0.15f, 0.39f, 0.92f, 1f)
     private val PREVIEW_COLOR = floatArrayOf(0.15f, 0.39f, 0.92f, 0.6f)

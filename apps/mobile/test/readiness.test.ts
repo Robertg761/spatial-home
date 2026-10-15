@@ -37,3 +37,7 @@ test('only an installed answer goes on to the camera', () => {
 test('a check that is taking a while can be tried again, rather than read as unsupported', () => {
   expect(afterAvailability('checking')).toEqual({ kind: 'still-checking' });
 });
+
+test('a check that failed, such as one that timed out offline, can be tried again', () => {
+  expect(afterAvailability('unknown')).toEqual({ kind: 'check-failed' });
+});

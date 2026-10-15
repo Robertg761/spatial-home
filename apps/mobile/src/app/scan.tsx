@@ -124,7 +124,8 @@ function useReadiness(): [Readiness, { install(): void; askForCamera(): void; re
       const changed =
         (now.kind === 'needs-install' && now.waiting) ||
         (now.kind === 'camera-denied' && !now.canAsk) ||
-        now.kind === 'still-checking';
+        now.kind === 'still-checking' ||
+        now.kind === 'check-failed';
       if (state === 'active' && changed) {
         setReadiness({ kind: 'checking' });
         void check();
@@ -189,6 +190,15 @@ function Message({
         <Centered
           title="Still checking this phone"
           body="ARCore is taking a while to find out whether it supports this phone. This needs an internet connection the first time."
+        >
+          <Button label="Try again" onPress={retry} />
+        </Centered>
+      );
+    case 'check-failed':
+      return (
+        <Centered
+          title="Couldn’t check this phone"
+          body="ARCore couldn’t find out whether it supports this phone. Check the internet connection and try again."
         >
           <Button label="Try again" onPress={retry} />
         </Centered>

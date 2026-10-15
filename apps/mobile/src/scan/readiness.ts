@@ -6,6 +6,8 @@ export type Readiness =
   | { kind: 'checking' }
   /** ARCore is still finding out whether it supports the phone; it says to ask again soon. */
   | { kind: 'still-checking' }
+  /** ARCore couldn't find out, often because the phone is offline. Nothing is known about the phone. */
+  | { kind: 'check-failed' }
   | { kind: 'not-android' }
   | { kind: 'not-included' }
   | { kind: 'unsupported' }
@@ -27,6 +29,8 @@ export function afterAvailability(availability: ArcoreAvailability): 'request-in
       return { kind: 'needs-install', update: availability === 'needs-update', waiting: false };
     case 'checking':
       return { kind: 'still-checking' };
+    case 'unknown':
+      return { kind: 'check-failed' };
     case 'unsupported':
       return { kind: 'unsupported' };
   }

@@ -22,7 +22,7 @@ ARCore is declared optional, so the app still installs on phones without it. The
 | Export | What it does |
 | --- | --- |
 | `scannerIncluded` | Whether this build has the module. False on iPhone, on the web and in Expo Go. |
-| `getAvailabilityAsync()` | `supported`, `needs-install`, `needs-update`, `unsupported`, or `checking` while ARCore is still finding out. |
+| `getAvailabilityAsync()` | `supported`, `needs-install`, `needs-update`, `unsupported`, `checking` while ARCore is still finding out, or `unknown` when it couldn't find out, such as offline. |
 | `requestInstallAsync()` | Opens the Play Store to install or update ARCore. `installed`, `requested` (check again when the app comes back), `declined` or `unsupported`. |
 | `ArcoreScannerView` | The camera view. Props: `active`, and `cornerIds` for the current room's corners. Events: `onTrackingChange`, `onAim` and `onError`. Its ref has `getAimAsync()`, which gives where the crosshair meets the floor, and `addCornerAsync()`, `getCornerPositionsAsync()` and `removeCornersAsync()` for the corners. |
 
@@ -39,7 +39,7 @@ The camera permission is requested by the app, not the module.
 - `ArcoreScannerView.kt` runs the ARCore session on a `GLSurfaceView`. Each frame it draws the camera, the floor planes found so far, the walls between the corners, and the crosshair's point on the floor.
 - The crosshair is a ray from the centre of the camera, intersected with the floor's height. The floor's height comes from the first corner once there is one. Before that, it comes from the lowest upward-facing plane of at least 0.25 m² that is 0.3–2.2 m below the phone and within 4 m of it to the side. The camera can't see below the floor, and tables and beds are always above it, so the lowest nearby plane is the floor once ARCore has found it. The limits keep a storey below, seen earlier in the session, from being taken for this room's floor.
 - `BackgroundRenderer.kt` draws the camera image, and `OverlayRenderer.kt` draws lines and points.
-- The session pauses when the app goes to the background and resumes when it comes back.
+- The session pauses when the app goes to the background and resumes when it comes back. If another app takes the camera mid-scan, the view stops as for a pause and tries again every two seconds until the camera is free. Corner calls fail, rather than wait, while the camera isn't running.
 
 ## Not yet
 

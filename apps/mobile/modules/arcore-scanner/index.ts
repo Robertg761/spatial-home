@@ -6,7 +6,7 @@ import type { NativeSyntheticEvent, ViewProps } from 'react-native';
 export type Vector3 = [number, number, number];
 
 export type ArcoreAvailability =
-  'supported' | 'needs-install' | 'needs-update' | 'unsupported' | 'checking';
+  'supported' | 'needs-install' | 'needs-update' | 'unsupported' | 'checking' | 'unknown';
 export type InstallResult = 'installed' | 'requested' | 'declined' | 'unsupported';
 
 export interface TrackingEvent {

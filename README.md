@@ -58,6 +58,7 @@ One TypeScript monorepo using npm workspaces. Apps are what people run; packages
 | [`apps/mobile`](apps/mobile) | iOS and Android app: scan rooms into the same home model | React Native, Expo |
 | [`packages/ha-client`](packages/ha-client) | Connection to Home Assistant: live states, registries, service calls | TypeScript, no dependencies |
 | [`packages/home-model`](packages/home-model) | The `home-layout.json` format every app reads and writes, with validation and plan geometry | TypeScript, Zod |
+| [`packages/scan-import`](packages/scan-import) | Turns an iPhone or Android room scan into a `home-layout.json` | TypeScript, Zod |
 | [`scripts`](scripts) | Developer tools, such as `ha-check` | Node |
 
 Planned, and added when their phase starts:
@@ -80,6 +81,19 @@ npm run ha:check     # connect to your own Home Assistant (see .env.example)
 ```
 
 In `apps/mobile`, add dependencies with `npx expo install <package>` rather than `npm install`, so they match the Expo SDK.
+
+The root also declares `expo`, `expo-router`, `react`, and `react-dom` as development
+dependencies, matching the apps' versions. This keeps Expo Router reachable by the
+root-installed Expo CLI when it generates typed routes. Keep these declarations in
+sync when upgrading Expo or React. App dependencies still belong in the app's own
+`package.json`; these root declarations support the shared development tooling.
+The root overrides keep Router's transitive gesture and animation libraries on
+the versions listed in Expo's `bundledNativeModules.json`. Update those alongside
+the Expo SDK to avoid incompatible native modules being selected automatically.
+
+CI generates mobile route types with `npx expo customize tsconfig.json` from
+`apps/mobile` before typechecking. This also checks that Expo's route generator can
+resolve its dependencies after a clean install.
 
 ## License
 

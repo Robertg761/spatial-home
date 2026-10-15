@@ -15,9 +15,11 @@ import {
 import sample from '@spatial-home/home-model/examples/sample-flat.json';
 import { describe, expect, test } from 'vitest';
 import {
+  addMissingFloor,
   addOpening,
   addRoom,
   deleteItem,
+  missingFloors,
   moveCorner,
   moveRoom,
   nearestWall,
@@ -33,14 +35,11 @@ import {
 import { NUMBER_LIMITS, numberToCommit, textToCommit } from '../src/editor/fields.ts';
 import { editorReducer, initialState, type EditorState } from '../src/editor/state.ts';
 
-/** Errors the editor has no way to repair, so no edit may introduce them. */
-const UNREPAIRABLE = new Set([
-  'unknown-floor',
-  'unknown-room',
-  'unknown-wall',
-  'duplicate-id',
-  'reserved-id',
-]);
+/**
+ * Errors the editor has no way to repair, so no edit may introduce them. Rooms on a missing floor
+ * can be repaired, and wrongFloor checks that no edit puts a room on a new one.
+ */
+const UNREPAIRABLE = new Set(['unknown-room', 'unknown-wall', 'duplicate-id', 'reserved-id']);
 
 /** The snapping distance on the plan at its default zoom, in metres. */
 const SNAP = 0.24;
@@ -57,7 +56,10 @@ function mulberry32(seed: number): () => number {
 
 class Run {
   state: EditorState;
-  /** Openings whose destination was chosen in the inspector rather than found from the walls. */
+  /**
+   * Openings whose destination was chosen in the inspector rather than found from the walls, or
+   * that the layout started with leading somewhere other than what is behind them.
+   */
   readonly handSet = new Set<string>();
   readonly log: string[] = [];
   private readonly random: () => number;
@@ -65,6 +67,7 @@ class Run {
   constructor(layout: HomeLayout, seed: number) {
     this.state = initialState(layout);
     this.random = mulberry32(seed);
+    for (const { opening } of misdirected(this.layout)) this.handSet.add(opening.id);
   }
 
   int(n: number): number {
@@ -274,11 +277,12 @@ class Run {
     const room = this.pick(this.roomsHere());
     if (!room) return;
     this.dispatch({ type: 'select', selection: { kind: 'room', id: room.id } });
-    if (this.random() < 0.5) {
+    const roll = this.int(4);
+    if (roll === 0) {
       const name = textToCommit(this.text(), room.name, { required: true });
       if (name !== null)
         this.dispatch({ type: 'edit', layout: updateRoom(this.layout, room.id, { name }) });
-    } else {
+    } else if (roll === 1) {
       const limits = NUMBER_LIMITS.ceilingHeight;
       const ceilingHeight = numberToCommit(this.numberText(), room.ceilingHeight, limits);
       if (ceilingHeight !== null) {
@@ -287,6 +291,14 @@ class Run {
           layout: updateRoom(this.layout, room.id, { ceilingHeight }),
         });
       }
+    } else if (roll === 2 || !missingFloors(this.layout).includes(room.floorId)) {
+      // The floors it offers: the layout's, and the room's own when that is missing.
+      const floorId = this.pick([...this.layout.floors.map((floor) => floor.id), room.floorId])!;
+      if (floorId !== room.floorId) {
+        this.dispatch({ type: 'edit', layout: updateRoom(this.layout, room.id, { floorId }) });
+      }
+    } else {
+      this.dispatch({ type: 'edit', layout: addMissingFloor(this.layout, room.floorId).layout });
     }
   }
 
@@ -294,12 +306,13 @@ class Run {
   updateHome() {
     this.dispatch({ type: 'select', selection: null });
     const { layout } = this;
-    if (this.random() < 0.5) {
+    const roll = this.int(3);
+    if (roll === 0) {
       const name = textToCommit(this.text(), layout.name ?? '');
       if (name === null) return;
       const { name: _old, ...rest } = layout;
       this.dispatch({ type: 'edit', layout: name ? { ...rest, name } : rest });
-    } else {
+    } else if (roll === 1 || !missingFloors(layout).includes(this.state.floorId)) {
       const limits = NUMBER_LIMITS.northBearing;
       const north = numberToCommit(this.numberText(), layout.site.northBearing, limits);
       if (north === null) return;
@@ -307,6 +320,10 @@ class Run {
         type: 'edit',
         layout: { ...layout, site: { ...layout.site, northBearing: north % 360 } },
       });
+    } else {
+      const { layout: next, id } = addMissingFloor(layout, this.state.floorId);
+      this.dispatch({ type: 'edit', layout: next });
+      this.dispatch({ type: 'set-floor', floorId: id });
     }
   }
 
@@ -326,14 +343,19 @@ class Run {
     else if (roll < 37) this.dragCorner();
     else if (roll < 52) this.addOpening();
     else if (roll < 64) this.updateOpening();
-    else if (roll < 67) this.updateRoom();
-    else if (roll < 70) this.updateHome();
-    else if (roll < 77) this.deleteSomething();
-    else if (roll < 84) this.dispatch({ type: 'undo' });
+    else if (roll < 69) this.updateRoom();
+    else if (roll < 72) this.updateHome();
+    else if (roll < 78) this.deleteSomething();
+    else if (roll < 85) this.dispatch({ type: 'undo' });
     else if (roll < 89) this.dispatch({ type: 'redo' });
     else if (roll < 94) {
-      const floor = this.pick(this.layout.floors);
-      if (floor) this.dispatch({ type: 'set-floor', floorId: floor.id });
+      // The floors the home inspector offers: the layout's, then the missing ones rooms are on.
+      const floors = [
+        ...this.layout.floors.map((floor) => floor.id),
+        ...missingFloors(this.layout),
+      ];
+      const floorId = this.pick(floors);
+      if (floorId) this.dispatch({ type: 'set-floor', floorId });
     } else {
       const room = this.pick(this.layout.rooms);
       this.dispatch({ type: 'select', selection: room ? { kind: 'room', id: room.id } : null });
@@ -385,17 +407,34 @@ function openingsOffTheirWalls(layout: HomeLayout): Opening[] {
     .map((issue) => layout.openings[issue.path[1] as number]!);
 }
 
+/** A room an edit put on a missing floor that no room was on at the start, or null. */
+function wrongFloor(initial: HomeLayout, layout: HomeLayout): string | null {
+  const allowed = new Set(missingFloors(initial));
+  const room = layout.rooms.find(
+    (r) => !allowed.has(r.floorId) && !layout.floors.some((floor) => floor.id === r.floorId)
+  );
+  return room ? `${room.id} is on ${room.floorId}, which is missing` : null;
+}
+
+/** The layout with every missing floor added, as the inspector's button adds each. */
+function withMissingFloorsAdded(layout: HomeLayout): HomeLayout {
+  return missingFloors(layout).reduce((next, id) => addMissingFloor(next, id).layout, layout);
+}
+
 function wrongDestination(run: Run): string | null {
-  const { layout } = run;
-  for (const opening of layout.openings) {
-    if (run.handSet.has(opening.id)) continue;
-    if (!layout.rooms.some((room) => room.id === opening.wall.roomId)) continue;
+  const wrong = misdirected(run.layout).find(({ opening }) => !run.handSet.has(opening.id));
+  return wrong
+    ? `${wrong.opening.id} leads to ${wrong.opening.connects} but ${wrong.behind} is behind it`
+    : null;
+}
+
+/** Openings that lead somewhere other than what is behind them. */
+function misdirected(layout: HomeLayout): { opening: Opening; behind: string }[] {
+  return layout.openings.flatMap((opening) => {
+    if (!layout.rooms.some((room) => room.id === opening.wall.roomId)) return [];
     const behind = roomAcross(layout, opening.wall.roomId, opening.wall.index, opening.offset);
-    if (behind !== opening.connects) {
-      return `${opening.id} leads to ${opening.connects} but ${behind} is behind it`;
-    }
-  }
-  return null;
+    return behind === opening.connects ? [] : [{ opening, behind }];
+  });
 }
 
 function sampleFlat(): HomeLayout {
@@ -428,12 +467,31 @@ function withDuplicateIds(): HomeLayout {
   };
 }
 
+/**
+ * The sample with rooms on floors it doesn't have, one of them with the id of a room, so doors
+ * lead to rooms on other floors.
+ */
+function withMissingFloors(): HomeLayout {
+  const flat = sampleFlat();
+  const floorOf: Record<string, string> = {
+    bathroom: 'first-floor',
+    bedroom: 'first-floor',
+    kitchen: 'living-room',
+  };
+  return {
+    ...flat,
+    rooms: flat.rooms.map((room) => ({ ...room, floorId: floorOf[room.id] ?? room.floorId })),
+  };
+}
+
 /** Where to start, and how many runs from there. */
 const STARTS: [string, () => HomeLayout, number][] = [
   ['the sample flat', sampleFlat, 50],
   ['a new layout', () => createEmptyLayout(), 80],
   ['a layout without floors', () => ({ ...createEmptyLayout(), floors: [] }), 80],
   ['a layout with duplicate ids', withDuplicateIds, 30],
+  ['a layout with rooms on missing floors', withMissingFloors, 50],
+  ['a layout missing all its floors', () => ({ ...sampleFlat(), floors: [] }), 30],
 ];
 
 describe('random edits', () => {
@@ -457,8 +515,14 @@ describe('random edits', () => {
           expect(validate(run.layout).layout, where()).toBeDefined();
           expect(brokenBy(before, run.layout), where()).toBeNull();
           expect(offItsWall(before, run.layout), where()).toBeNull();
+          expect(wrongFloor(initial, run.layout), where()).toBeNull();
           expect(wrongDestination(run), where()).toBeNull();
         }
+
+        // Rooms on missing floors can always be put right, without breaking anything else.
+        const repaired = withMissingFloorsAdded(run.layout);
+        expect(errorCodes(repaired), where()).not.toContain('unknown-floor');
+        expect(brokenBy(run.layout, repaired), where()).toBeNull();
 
         // Undoing every step gets back to the start, and redoing them all to the end.
         const end = run.layout;

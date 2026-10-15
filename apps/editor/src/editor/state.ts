@@ -1,11 +1,14 @@
 import { createEmptyLayout, serializeLayout, type HomeLayout } from '@spatial-home/home-model';
-import { uniqueIds } from './plan.ts';
+import { missingFloors, uniqueIds } from './plan.ts';
 
 export type Selection = { kind: 'room' | 'opening'; id: string } | null;
 
 export interface EditorState {
   layout: HomeLayout;
-  /** The floor shown on the plan. */
+  /**
+   * The floor shown on the plan: one of the layout's, or one rooms are on that the layout is
+   * missing, so those rooms can be seen and repaired.
+   */
   floorId: string;
   selection: Selection;
   past: HomeLayout[];
@@ -32,7 +35,7 @@ export function initialState(loaded: HomeLayout): EditorState {
   const { layout } = uniqueIds(loaded);
   return {
     layout,
-    floorId: layout.floors[0]?.id ?? '',
+    floorId: firstFloor(layout),
     selection: null,
     past: [],
     future: [],
@@ -102,15 +105,8 @@ export function editorReducer(state: EditorState, action: EditorAction): EditorS
       );
     }
 
-    case 'select': {
-      // Show the floor the item is on, as an issue can be about an item on another floor.
-      const floorId = selectionFloor(state.layout, action.selection);
-      const floorExists = state.layout.floors.some((floor) => floor.id === floorId);
-      return withSelection(
-        floorId && floorExists ? { ...state, floorId } : state,
-        action.selection
-      );
-    }
+    case 'select':
+      return withSelection(state, action.selection);
 
     case 'set-floor':
       return { ...state, floorId: action.floorId, selection: null };
@@ -137,19 +133,34 @@ function pushHistory(past: HomeLayout[], layout: HomeLayout): HomeLayout[] {
   return next.length > HISTORY_LIMIT ? next.slice(next.length - HISTORY_LIMIT) : next;
 }
 
-/** Keeps the selection only while the selected item exists; undo can remove it. */
+/**
+ * Keeps the selection only while the selected item exists; undo can remove it. The plan shows the
+ * floor the selected item is on, as an issue can be about an item on another floor, and an edit or
+ * an undo can move the item to another floor.
+ */
 function withSelection(state: EditorState, selection: Selection): EditorState {
+  const { layout } = state;
   const exists =
     selection === null ||
     (selection.kind === 'room'
-      ? state.layout.rooms.some((room) => room.id === selection.id)
-      : state.layout.openings.some((opening) => opening.id === selection.id));
-  const floorExists = state.layout.floors.some((floor) => floor.id === state.floorId);
-  return {
-    ...state,
-    selection: exists ? selection : null,
-    floorId: floorExists ? state.floorId : (state.layout.floors[0]?.id ?? ''),
-  };
+      ? layout.rooms.some((room) => room.id === selection.id)
+      : layout.openings.some((opening) => opening.id === selection.id));
+  const kept = exists ? selection : null;
+  const floorId =
+    selectionFloor(layout, kept) ??
+    (canShow(layout, state.floorId) ? state.floorId : firstFloor(layout));
+  return { ...state, selection: kept, floorId };
+}
+
+function canShow(layout: HomeLayout, floorId: string): boolean {
+  return (
+    layout.floors.some((floor) => floor.id === floorId) ||
+    layout.rooms.some((room) => room.floorId === floorId)
+  );
+}
+
+function firstFloor(layout: HomeLayout): string {
+  return layout.floors[0]?.id ?? missingFloors(layout)[0] ?? '';
 }
 
 function selectionFloor(layout: HomeLayout, selection: Selection): string | undefined {

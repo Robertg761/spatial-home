@@ -1,6 +1,14 @@
-import { createEmptyLayout, validateLayout } from '@spatial-home/home-model';
+import { createEmptyLayout, validateLayout, type HomeLayout } from '@spatial-home/home-model';
 import { describe, expect, test } from 'vitest';
-import { addOpening, addRoom, deleteItem, moveRoom, nearestWall } from '../src/editor/plan.ts';
+import {
+  addMissingFloor,
+  addOpening,
+  addRoom,
+  deleteItem,
+  moveRoom,
+  nearestWall,
+  updateRoom,
+} from '../src/editor/plan.ts';
 import { editorReducer, initialState, isPristine, type EditorState } from '../src/editor/state.ts';
 
 const square = [
@@ -166,6 +174,86 @@ describe('editorReducer', () => {
     });
     expect(opening.floorId).toBe('first-floor');
     expect(opening.selection).toEqual({ kind: 'opening', id: added.id });
+  });
+});
+
+describe('rooms on missing floors', () => {
+  /** A ground-floor room, and one on a first floor the layout doesn't have. */
+  function withMissingFloor(): { layout: HomeLayout; lost: string } {
+    const { layout: one } = addRoom(createEmptyLayout(), 'ground-floor', square);
+    const { layout, id: lost } = addRoom(one, 'first-floor', square);
+    return { layout, lost };
+  }
+
+  test('selecting a room on a missing floor shows that floor', () => {
+    const { layout, lost } = withMissingFloor();
+    const state = initialState(layout);
+    expect(state.floorId).toBe('ground-floor');
+    const selected = editorReducer(state, {
+      type: 'select',
+      selection: { kind: 'room', id: lost },
+    });
+    expect(selected.floorId).toBe('first-floor');
+    expect(selected.selection).toEqual({ kind: 'room', id: lost });
+    // It stays shown after an edit that leaves the floor missing.
+    const renamed = editorReducer(editorReducer(selected, { type: 'select', selection: null }), {
+      type: 'edit',
+      layout: updateRoom(layout, lost, { name: 'Loft' }),
+    });
+    expect(renamed.floorId).toBe('first-floor');
+  });
+
+  test('a layout whose rooms are all on missing floors opens on one of them', () => {
+    const { layout } = withMissingFloor();
+    expect(initialState({ ...layout, floors: [] }).floorId).toBe('ground-floor');
+  });
+
+  test('moving the selected room to another floor shows it there, and undo shows it back', () => {
+    const { layout, lost } = withMissingFloor();
+    const state = editorReducer(initialState(layout), {
+      type: 'select',
+      selection: { kind: 'room', id: lost },
+    });
+    const moved = editorReducer(state, {
+      type: 'edit',
+      layout: updateRoom(state.layout, lost, { floorId: 'ground-floor' }),
+    });
+    expect(moved.floorId).toBe('ground-floor');
+    expect(validateLayout(moved.layout).ok).toBe(true);
+    // One step.
+    const undone = editorReducer(moved, { type: 'undo' });
+    expect(undone.layout).toBe(state.layout);
+    expect(undone.floorId).toBe('first-floor');
+    expect(editorReducer(undone, { type: 'redo' }).floorId).toBe('ground-floor');
+  });
+
+  test('adding the missing floor keeps it shown, as one step', () => {
+    const { layout, lost } = withMissingFloor();
+    const state = editorReducer(initialState(layout), {
+      type: 'select',
+      selection: { kind: 'room', id: lost },
+    });
+    const added = editorReducer(state, {
+      type: 'edit',
+      layout: addMissingFloor(state.layout, 'first-floor').layout,
+    });
+    expect(added.floorId).toBe('first-floor');
+    expect(added.layout.floors.map((floor) => floor.id)).toEqual(['ground-floor', 'first-floor']);
+    expect(validateLayout(added.layout).ok).toBe(true);
+    expect(editorReducer(added, { type: 'undo' }).layout).toBe(state.layout);
+  });
+
+  test('when the floor shown goes, the plan shows the first floor', () => {
+    const { layout, lost } = withMissingFloor();
+    const state = editorReducer(initialState(layout), {
+      type: 'set-floor',
+      floorId: 'first-floor',
+    });
+    const deleted = editorReducer(state, {
+      type: 'edit',
+      layout: deleteItem(state.layout, { kind: 'room', id: lost }),
+    });
+    expect(deleted.floorId).toBe('ground-floor');
   });
 });
 

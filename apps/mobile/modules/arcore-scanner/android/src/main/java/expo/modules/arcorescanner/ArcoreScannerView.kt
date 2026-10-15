@@ -3,6 +3,7 @@ package expo.modules.arcorescanner
 import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
+import android.hardware.display.DisplayManager
 import android.opengl.GLES20
 import android.opengl.GLSurfaceView
 import android.opengl.Matrix
@@ -79,7 +80,7 @@ class ArcoreScannerView(context: Context, appContext: AppContext) :
   private var viewportWidth = 0
   private var viewportHeight = 0
   private var floorHeight: Float? = null
-  private var lastTracking = ""
+  @Volatile private var lastTracking = ""
   private var lastAimEventAt = 0L
 
   private val projection = FloatArray(16)
@@ -175,6 +176,7 @@ class ArcoreScannerView(context: Context, appContext: AppContext) :
       }
       current.resume()
       surface.onResume()
+      displayManager.registerDisplayListener(displayListener, null)
       resumed = true
       displayChanged = true
     } catch (e: UnavailableArcoreNotInstalledException) {
@@ -195,8 +197,25 @@ class ArcoreScannerView(context: Context, appContext: AppContext) :
   private fun pause() {
     if (!resumed) return
     resumed = false
+    displayManager.unregisterDisplayListener(displayListener)
     surface.onPause()
     session?.pause()
+    // The aim belongs to the last frame. After a pause ARCore may relocalise, so nothing from
+    // before it can be placed: JavaScript hears tracking has stopped until a fresh frame says so.
+    lastAim = null
+    lastTracking = ""
+    post { onTrackingChange(mapOf("state" to "stopped", "reason" to "none", "floorFound" to false)) }
+  }
+
+  // A 180° turn changes neither the view's size nor the configuration, so only a display listener
+  // hears about it, as in ARCore's Hello AR sample.
+  private val displayManager = context.getSystemService(Context.DISPLAY_SERVICE) as DisplayManager
+  private val displayListener = object : DisplayManager.DisplayListener {
+    override fun onDisplayAdded(displayId: Int) {}
+    override fun onDisplayRemoved(displayId: Int) {}
+    override fun onDisplayChanged(displayId: Int) {
+      displayChanged = true
+    }
   }
 
   private fun configure(session: Session) {

@@ -1,0 +1,286 @@
+{
+  "title": "Spatial Home room scan, version 1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "format": {
+      "type": "string",
+      "const": "spatial-home/room-scan"
+    },
+    "version": {
+      "type": "number",
+      "const": 1
+    },
+    "source": {
+      "type": "object",
+      "properties": {
+        "platform": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Such as \"ios-roomplan\" or \"android-arcore\"."
+        },
+        "method": {
+          "description": "Such as \"automatic\" or \"guided\".",
+          "type": "string",
+          "minLength": 1
+        },
+        "app": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "platform"
+      ],
+      "additionalProperties": false
+    },
+    "worldNorth": {
+      "description": "Compass bearing of the world -z axis, when the session knows it (ARKit gravityAndHeading).",
+      "type": "number",
+      "minimum": 0,
+      "exclusiveMaximum": 360
+    },
+    "rooms": {
+      "minItems": 1,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "category": {
+            "description": "What kind of room the scanner thinks it is, such as \"bedroom\" or \"kitchen\".",
+            "type": "string",
+            "minLength": 1
+          },
+          "outline": {
+            "description": "Floor corners in order around the room, when the scanner has them, such as from a guided capture where the user taps each corner. Otherwise the outline is built from the walls.",
+            "minItems": 3,
+            "type": "array",
+            "items": {
+              "type": "array",
+              "prefixItems": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                }
+              ],
+              "items": false,
+              "minItems": 3,
+              "maxItems": 3,
+              "description": "[x, y, z] in metres, y up."
+            }
+          },
+          "ceilingHeight": {
+            "description": "Floor to ceiling, in metres, when measured or entered. Otherwise the tallest wall is used.",
+            "type": "number",
+            "exclusiveMinimum": 0
+          },
+          "walls": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "start": {
+                  "type": "array",
+                  "prefixItems": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "number"
+                    }
+                  ],
+                  "items": false,
+                  "minItems": 3,
+                  "maxItems": 3,
+                  "description": "One bottom corner of the wall, where it meets the floor."
+                },
+                "end": {
+                  "type": "array",
+                  "prefixItems": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "number"
+                    }
+                  ],
+                  "items": false,
+                  "minItems": 3,
+                  "maxItems": 3,
+                  "description": "The other bottom corner."
+                },
+                "height": {
+                  "type": "number",
+                  "exclusiveMinimum": 0
+                }
+              },
+              "required": [
+                "start",
+                "end",
+                "height"
+              ],
+              "additionalProperties": false,
+              "description": "A flat wall, as a vertical rectangle standing on the floor."
+            }
+          },
+          "openings": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "door",
+                    "window",
+                    "opening"
+                  ],
+                  "description": "\"opening\" is a doorway with no door."
+                },
+                "center": {
+                  "type": "array",
+                  "prefixItems": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "number"
+                    }
+                  ],
+                  "items": false,
+                  "minItems": 3,
+                  "maxItems": 3,
+                  "description": "Centre of the opening."
+                },
+                "width": {
+                  "type": "number",
+                  "exclusiveMinimum": 0
+                },
+                "height": {
+                  "type": "number",
+                  "exclusiveMinimum": 0
+                },
+                "wallId": {
+                  "description": "The wall it is in, when the scanner knows. Otherwise the nearest wall is used.",
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "required": [
+                "kind",
+                "center",
+                "width",
+                "height"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "objects": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "category": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "What it is, such as RoomPlan's \"bed\", \"sofa\", \"table\", \"television\" or \"storage\"."
+                },
+                "center": {
+                  "type": "array",
+                  "prefixItems": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "number"
+                    }
+                  ],
+                  "items": false,
+                  "minItems": 3,
+                  "maxItems": 3,
+                  "description": "Centre of the bounding box."
+                },
+                "size": {
+                  "type": "array",
+                  "prefixItems": [
+                    {
+                      "type": "number",
+                      "exclusiveMinimum": 0
+                    },
+                    {
+                      "type": "number",
+                      "exclusiveMinimum": 0
+                    },
+                    {
+                      "type": "number",
+                      "exclusiveMinimum": 0
+                    }
+                  ],
+                  "items": false,
+                  "minItems": 3,
+                  "maxItems": 3,
+                  "description": "[width, height, depth] of the box before it is turned."
+                },
+                "yaw": {
+                  "type": "number",
+                  "description": "Turn about the vertical axis, in radians, anticlockwise seen from above."
+                }
+              },
+              "required": [
+                "category",
+                "center",
+                "size",
+                "yaw"
+              ],
+              "additionalProperties": false,
+              "description": "A piece of furniture or an appliance, as a box."
+            }
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "format",
+    "version",
+    "rooms"
+  ],
+  "additionalProperties": false
+}

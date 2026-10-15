@@ -1,0 +1,15 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "target": "es2022",
+    "lib": ["es2023"],
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "types": ["node"],
+    "exactOptionalPropertyTypes": true,
+    // Node runs this package's TypeScript directly, which allows only syntax it can strip.
+    "erasableSyntaxOnly": true,
+    "resolveJsonModule": true
+  },
+  "include": ["src", "test", "scripts"]
+}

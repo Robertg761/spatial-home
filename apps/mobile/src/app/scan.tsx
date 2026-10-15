@@ -385,9 +385,10 @@ function Scanner() {
       <View3d
         ref={scanner}
         style={StyleSheet.absoluteFill}
-        // Paused, not unmounted, while reviewing: a new AR session would start a new world, and
-        // the next room wouldn't line up with the ones already scanned.
-        active={!result}
+        // Kept running, not just mounted, while the result is shown: the person may walk to the next
+        // room before tapping Scan another room, and ARCore has to keep tracking on the way so the
+        // next room lines up with the ones already scanned.
+        active
         cornerIds={corners.map((corner) => corner.id)}
         onTrackingChange={(event) => {
           setTracking(event.nativeEvent);

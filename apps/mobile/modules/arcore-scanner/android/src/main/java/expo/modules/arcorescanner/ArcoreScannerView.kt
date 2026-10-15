@@ -282,14 +282,26 @@ class ArcoreScannerView(context: Context, appContext: AppContext) :
   }
 
   /**
-   * The floor is the lowest upward-facing plane, since the camera can't see anything below the
-   * floor, while tables and beds are always above it. Planes too small to be more than a patch, or
-   * not clearly below the phone, are ignored.
+   * The floor under the phone is the lowest upward-facing plane near it: tables and beds are always
+   * above the floor, and the camera can't see below it. Only planes a phone could be held above
+   * count, so a storey below that ARCore saw earlier in the session isn't taken for this room's
+   * floor. Small patches are ignored.
    */
   private fun floorHeightFrom(planes: List<Plane>, camera: Camera): Float? {
-    val eye = camera.pose.ty()
+    val eye = camera.pose
     return planes
-      .filter { eye - it.centerPose.ty() > MIN_FLOOR_DROP && it.extentX * it.extentZ >= MIN_FLOOR_AREA }
+      .filter { plane ->
+        val drop = eye.ty() - plane.centerPose.ty()
+        val reach = maxOf(plane.extentX, plane.extentZ) / 2
+        val across = hypot(
+          (plane.centerPose.tx() - eye.tx()).toDouble(),
+          (plane.centerPose.tz() - eye.tz()).toDouble()
+        ) - reach
+        drop > MIN_FLOOR_DROP &&
+          drop < MAX_FLOOR_DROP &&
+          across < MAX_FLOOR_DISTANCE &&
+          plane.extentX * plane.extentZ >= MIN_FLOOR_AREA
+      }
       .minOfOrNull { it.centerPose.ty() }
   }
 
@@ -404,6 +416,10 @@ class ArcoreScannerView(context: Context, appContext: AppContext) :
     private const val MAX_AIM_DISTANCE = 8f
     /** How far below the phone, in metres, a plane must be to count as the floor. */
     private const val MIN_FLOOR_DROP = 0.3f
+    /** How far below the phone, in metres, a plane can be and still be this room's floor. */
+    private const val MAX_FLOOR_DROP = 2.2f
+    /** How far to the side of the phone, in metres, the floor's nearest edge can be. */
+    private const val MAX_FLOOR_DISTANCE = 4.0
     /** The smallest plane, in square metres, that counts as the floor rather than a patch of it. */
     private const val MIN_FLOOR_AREA = 0.25f
     private const val AIM_EVENT_INTERVAL_MS = 150L

@@ -30,14 +30,14 @@ Points are in ARCore's world frame: metres, y up, and the session's starting poi
 
 Each corner is an ARCore anchor. ARCore keeps refining its map of the room while you scan, and an anchor stays on the same spot of the real floor as it does, while a saved coordinate would drift. So the screen keeps the anchors' ids and reads their positions again before it measures anything or imports the scan.
 
-Every room in one scan has to come from one AR session, so they share that frame. The scan screen keeps the view mounted, and only pauses it, while showing the result. Leaving the screen ends the session, and ARCore may not keep the same origin after the app has been in the background.
+Every room in one scan has to come from one AR session, so they share that frame. The scan screen keeps the session running while it shows the result, because the person may walk to the next room before scanning it, and ARCore has to keep tracking on the way. Leaving the screen ends the session, and ARCore may not keep the same origin after the app has been in the background.
 
 The camera permission is requested by the app, not the module.
 
 ## How it works
 
 - `ArcoreScannerView.kt` runs the ARCore session on a `GLSurfaceView`. Each frame it draws the camera, the floor planes found so far, the walls between the corners, and the crosshair's point on the floor.
-- The crosshair is a ray from the centre of the camera, intersected with the floor's height. The floor's height comes from the first corner once there is one. Before that, it comes from the lowest upward-facing plane at least 0.3 m below the phone and at least 0.25 m² in size. The camera can't see below the floor, and tables and beds are always above it, so the lowest plane is the floor once ARCore has found it.
+- The crosshair is a ray from the centre of the camera, intersected with the floor's height. The floor's height comes from the first corner once there is one. Before that, it comes from the lowest upward-facing plane of at least 0.25 m² that is 0.3–2.2 m below the phone and within 4 m of it to the side. The camera can't see below the floor, and tables and beds are always above it, so the lowest nearby plane is the floor once ARCore has found it. The limits keep a storey below, seen earlier in the session, from being taken for this room's floor.
 - `BackgroundRenderer.kt` draws the camera image, and `OverlayRenderer.kt` draws lines and points.
 - The session pauses when the app goes to the background and resumes when it comes back.
 

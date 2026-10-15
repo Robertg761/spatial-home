@@ -33,3 +33,7 @@ test('only an installed answer goes on to the camera', () => {
   });
   expect(afterInstall('unsupported', false)).toEqual({ kind: 'unsupported' });
 });
+
+test('a check that is taking a while can be tried again, rather than read as unsupported', () => {
+  expect(afterAvailability('checking')).toEqual({ kind: 'still-checking' });
+});

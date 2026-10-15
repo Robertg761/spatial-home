@@ -29,6 +29,9 @@ export function scanHint(
   if (!tracking.floorFound && corners.length === 0) {
     return 'Point the camera at the floor and move the phone slowly to find it.';
   }
+  if (aim?.cornersRaised && corners.length > 0) {
+    return 'Those corners are on a table or bed, not the floor. Undo them and aim at the floor.';
+  }
   if (!aim?.onFloor) return 'Point the crosshair at the floor.';
   if (corners.length === 0) {
     return 'Aim at a corner of the room where the walls meet the floor, then tap Add corner.';

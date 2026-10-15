@@ -4,6 +4,8 @@ import type { ArcoreAvailability, InstallResult } from '../../modules/arcore-sca
 
 export type Readiness =
   | { kind: 'checking' }
+  /** ARCore is still finding out whether it supports the phone; it says to ask again soon. */
+  | { kind: 'still-checking' }
   | { kind: 'not-android' }
   | { kind: 'not-included' }
   | { kind: 'unsupported' }
@@ -23,7 +25,9 @@ export function afterAvailability(availability: ArcoreAvailability): 'request-in
     case 'needs-install':
     case 'needs-update':
       return { kind: 'needs-install', update: availability === 'needs-update', waiting: false };
-    default:
+    case 'checking':
+      return { kind: 'still-checking' };
+    case 'unsupported':
       return { kind: 'unsupported' };
   }
 }

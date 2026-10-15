@@ -214,26 +214,28 @@ class ArcoreScannerView(context: Context, appContext: AppContext) :
     Matrix.multiplyMM(viewProjection, 0, projection, 0, viewMatrix, 0)
 
     val placed = corners
-    floorHeight = placed.firstOrNull()?.get(1) ?: floorHeightFrom(floors, camera)
+    val lowest = floorHeightFrom(floors, camera)
+    floorHeight = placed.firstOrNull()?.get(1) ?: lowest
     val aim = floorHeight?.let { aimAt(camera, it) }
     lastAim = aim
+    // The corners went on a table or bed found before the floor was.
+    val cornersRaised = placed.isNotEmpty() && lowest != null && placed[0][1] - lowest > MIN_FLOOR_DROP
 
     drawFloors(floors)
     drawCorners(placed, aim)
-    reportAim(aim, placed)
+    reportAim(aim, placed, cornersRaised)
   }
 
   /**
-   * The floor is the largest upward-facing plane at least 50 cm below the phone, so a table or a
-   * bed found first isn't mistaken for it.
+   * The floor is the lowest upward-facing plane, since the camera can't see anything below the
+   * floor, while tables and beds are always above it. Planes too small to be more than a patch, or
+   * not clearly below the phone, are ignored.
    */
   private fun floorHeightFrom(planes: List<Plane>, camera: Camera): Float? {
     val eye = camera.pose.ty()
     return planes
-      .filter { eye - it.centerPose.ty() > 0.5f }
-      .maxByOrNull { it.extentX * it.extentZ }
-      ?.centerPose
-      ?.ty()
+      .filter { eye - it.centerPose.ty() > MIN_FLOOR_DROP && it.extentX * it.extentZ >= MIN_FLOOR_AREA }
+      .minOfOrNull { it.centerPose.ty() }
   }
 
   /**
@@ -319,11 +321,11 @@ class ArcoreScannerView(context: Context, appContext: AppContext) :
   }
 
   /** Tells JavaScript where the crosshair is a few times a second, for the live measurements. */
-  private fun reportAim(aim: Aim?, placed: List<FloatArray>) {
+  private fun reportAim(aim: Aim?, placed: List<FloatArray>, cornersRaised: Boolean) {
     val now = System.currentTimeMillis()
     if (now - lastAimEventAt < AIM_EVENT_INTERVAL_MS) return
     lastAimEventAt = now
-    val event = mutableMapOf<String, Any>("onFloor" to (aim != null))
+    val event = mutableMapOf<String, Any>("onFloor" to (aim != null), "cornersRaised" to cornersRaised)
     if (aim != null) {
       event["point"] = listOf(aim.x.toDouble(), aim.y.toDouble(), aim.z.toDouble())
       placed.lastOrNull()?.let { event["fromLast"] = hypot((aim.x - it[0]).toDouble(), (aim.z - it[2]).toDouble()) }
@@ -345,6 +347,10 @@ class ArcoreScannerView(context: Context, appContext: AppContext) :
     val instances: MutableSet<ArcoreScannerView> = Collections.synchronizedSet(Collections.newSetFromMap(WeakHashMap()))
 
     private const val MAX_AIM_DISTANCE = 8f
+    /** How far below the phone, in metres, a plane must be to count as the floor. */
+    private const val MIN_FLOOR_DROP = 0.3f
+    /** The smallest plane, in square metres, that counts as the floor rather than a patch of it. */
+    private const val MIN_FLOOR_AREA = 0.25f
     private const val AIM_EVENT_INTERVAL_MS = 150L
     private val FLOOR_COLOR = floatArrayOf(1f, 1f, 1f, 0.35f)
     private val WALL_COLOR = floatArrayOf(0.15f, 0.39f, 0.92f, 1f)

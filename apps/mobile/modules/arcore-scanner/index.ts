@@ -29,6 +29,8 @@ export interface AimEvent {
   fromLast?: number;
   /** Distance along the floor to the first corner, for closing the room. */
   toFirst?: number;
+  /** The floor has turned up lower than the corners placed so far, which are on a table or bed. */
+  cornersRaised?: boolean;
 }
 
 export interface ScannerError {

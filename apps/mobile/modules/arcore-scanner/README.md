@@ -35,7 +35,7 @@ The camera permission is requested by the app, not the module.
 ## How it works
 
 - `ArcoreScannerView.kt` runs the ARCore session on a `GLSurfaceView`. Each frame it draws the camera, the floor planes found so far, the walls between the corners, and the crosshair's point on the floor.
-- The crosshair is a ray from the centre of the camera, intersected with the floor's height. The floor's height comes from the first corner once there is one, and otherwise from the largest upward-facing plane at least 0.5 m below the phone, so that a table isn't taken for the floor.
+- The crosshair is a ray from the centre of the camera, intersected with the floor's height. The floor's height comes from the first corner once there is one. Before that, it comes from the lowest upward-facing plane at least 0.3 m below the phone and at least 0.25 m² in size. The camera can't see below the floor, and tables and beds are always above it, so the lowest plane is the floor once ARCore has found it.
 - `BackgroundRenderer.kt` draws the camera image, and `OverlayRenderer.kt` draws lines and points.
 - The session pauses when the app goes to the background and resumes when it comes back.
 

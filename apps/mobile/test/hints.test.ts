@@ -27,6 +27,15 @@ describe('scanHint', () => {
     );
   });
 
+  test('warns when the corners turn out to be on furniture', () => {
+    expect(scanHint(tracking, { onFloor: true, cornersRaised: true }, three)).toMatch(
+      /table or bed/
+    );
+    expect(scanHint(tracking, { onFloor: true, cornersRaised: true }, [])).toMatch(
+      /corner of the room/
+    );
+  });
+
   test('says when tapping will close the room', () => {
     expect(scanHint(tracking, { onFloor: true, toFirst: 0.1 }, three)).toMatch(/close the room/);
     expect(scanHint(tracking, { onFloor: true, toFirst: 1 }, three)).toMatch(/next corner/);

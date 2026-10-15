@@ -10,7 +10,6 @@ import {
   Platform,
   Pressable,
   ScrollView,
-  Share,
   StyleSheet,
   Text,
   TextInput,
@@ -40,12 +39,13 @@ import {
 } from '../scan/guided.ts';
 import { formatDistance, parseCeilingHeight, scanHint } from '../scan/hints.ts';
 import { afterAvailability, afterInstall, type Readiness } from '../scan/readiness.ts';
+import { shareJsonFile } from '../scan/share.ts';
 
 const CHECK_INTERVAL = 500;
 const CHECK_ATTEMPTS = 20;
 
 /** Works out whether this phone can scan, installing ARCore and asking for the camera on the way. */
-function useReadiness(): [Readiness, { install(): void; askForCamera(): void }] {
+function useReadiness(): [Readiness, { install(): void; askForCamera(): void; retry(): void }] {
   const [readiness, setReadiness] = useState<Readiness>(() =>
     Platform.OS !== 'android'
       ? { kind: 'not-android' }
@@ -121,7 +121,8 @@ function useReadiness(): [Readiness, { install(): void; askForCamera(): void }] 
       // Not while the camera prompt can still be shown: the prompt itself sends the app inactive.
       const changed =
         (now.kind === 'needs-install' && now.waiting) ||
-        (now.kind === 'camera-denied' && !now.canAsk);
+        (now.kind === 'camera-denied' && !now.canAsk) ||
+        now.kind === 'still-checking';
       if (state === 'active' && changed) {
         setReadiness({ kind: 'checking' });
         void check();
@@ -136,11 +137,19 @@ function useReadiness(): [Readiness, { install(): void; askForCamera(): void }] 
     await requestInstall(update);
   }, [requestInstall]);
 
-  return [readiness, { install: () => void install(), askForCamera: () => void askForCamera() }];
+  const retry = useCallback(() => {
+    setReadiness({ kind: 'checking' });
+    void check();
+  }, [check]);
+
+  return [
+    readiness,
+    { install: () => void install(), askForCamera: () => void askForCamera(), retry },
+  ];
 }
 
 export default function ScanScreen() {
-  const [readiness, { install, askForCamera }] = useReadiness();
+  const [readiness, { install, askForCamera, retry }] = useReadiness();
 
   return (
     <>
@@ -148,7 +157,12 @@ export default function ScanScreen() {
       {readiness.kind === 'ready' ? (
         <Scanner />
       ) : (
-        <Message readiness={readiness} install={install} askForCamera={askForCamera} />
+        <Message
+          readiness={readiness}
+          install={install}
+          askForCamera={askForCamera}
+          retry={retry}
+        />
       )}
     </>
   );
@@ -158,14 +172,25 @@ function Message({
   readiness,
   install,
   askForCamera,
+  retry,
 }: {
   readiness: Exclude<Readiness, { kind: 'ready' }>;
   install(): void;
   askForCamera(): void;
+  retry(): void;
 }) {
   switch (readiness.kind) {
     case 'checking':
       return <Centered title="Checking this phone…" />;
+    case 'still-checking':
+      return (
+        <Centered
+          title="Still checking this phone"
+          body="ARCore is taking a while to find out whether it supports this phone. This needs an internet connection the first time."
+        >
+          <Button label="Try again" onPress={retry} />
+        </Centered>
+      );
     case 'not-android':
       return (
         <Centered
@@ -406,8 +431,8 @@ function Review({
 }) {
   const insets = useSafeAreaInsets();
 
-  const share = (message: string, title: string) => {
-    Share.share({ message, title }).catch((error: unknown) =>
+  const share = (text: string, name: string) => {
+    shareJsonFile(name, text).catch((error: unknown) =>
       Alert.alert('Couldn’t share', error instanceof Error ? error.message : String(error))
     );
   };

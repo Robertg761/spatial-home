@@ -1,5 +1,6 @@
 // The room logic of a guided capture, kept apart from the camera so it can be tested.
 
+import { isSimplePolygon } from '@spatial-home/home-model';
 import type { ScanSessionInput, Vector3 } from '@spatial-home/scan-import';
 
 /** How close, in metres, the crosshair must be to the first corner to close the room there. */
@@ -70,25 +71,13 @@ export function addCorner(corners: Vector3[], point: Vector3): AddCorner {
   return { kind: 'added', corners: [...corners, point] };
 }
 
-/** Whether walls between the corners would cross each other once the room is closed. */
+/**
+ * Whether the corners fail to make a proper room once it's closed: walls that cross or touch, a
+ * corner visited twice, or a wall that doubles back. This is the check the home layout's own
+ * validation makes, so a room the scan screen accepts is never replaced with its outer hull.
+ */
 export function crossesItself(corners: Vector3[]): boolean {
-  const n = corners.length;
-  if (n < 4) return false;
-  const p = corners.map(([x, , z]) => [x, z] as const);
-  const cross = (o: readonly number[], a: readonly number[], b: readonly number[]) =>
-    (a[0]! - o[0]!) * (b[1]! - o[1]!) - (a[1]! - o[1]!) * (b[0]! - o[0]!);
-  for (let i = 0; i < n; i++) {
-    for (let j = i + 2; j < n; j++) {
-      if (i === 0 && j === n - 1) continue;
-      const [a1, a2, b1, b2] = [p[i]!, p[(i + 1) % n]!, p[j]!, p[(j + 1) % n]!];
-      const d1 = cross(b1, b2, a1);
-      const d2 = cross(b1, b2, a2);
-      const d3 = cross(a1, a2, b1);
-      const d4 = cross(a1, a2, b2);
-      if (d1 * d2 < 0 && d3 * d4 < 0) return true;
-    }
-  }
-  return false;
+  return !isSimplePolygon(corners.map(([x, , z]) => [x, z] as const));
 }
 
 /** The room scan file for the rooms captured in one AR session. */

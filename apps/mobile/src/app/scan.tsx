@@ -387,12 +387,16 @@ function Scanner() {
     [exclusively, freshCorners, closeRoom]
   );
 
-  const undoCorner = useCallback(() => {
-    const last = corners.at(-1);
-    if (!last) return;
-    setCorners(corners.slice(0, -1));
-    void scanner.current?.removeCornersAsync([last.id]).catch(() => {});
-  }, [corners]);
+  const undoCorner = useCallback(
+    () =>
+      exclusively(async () => {
+        const last = corners.at(-1);
+        if (!last) return;
+        setCorners(corners.slice(0, -1));
+        await scanner.current?.removeCornersAsync([last.id]).catch(() => {});
+      }),
+    [exclusively, corners]
+  );
 
   const finish = useCallback(
     () =>
@@ -502,7 +506,7 @@ function Scanner() {
                 label="Undo"
                 kind="secondary"
                 disabled={busy || corners.length === 0}
-                onPress={undoCorner}
+                onPress={() => void undoCorner()}
               />
               <Button
                 label="Add corner"

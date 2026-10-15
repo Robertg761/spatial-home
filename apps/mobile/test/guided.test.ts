@@ -54,6 +54,14 @@ test('crossesItself spots a bow tie', () => {
   expect(crossesItself([corners[0]!, corners[2]!, corners[1]!, corners[3]!])).toBe(true);
 });
 
+test('crossesItself also catches a corner visited twice and a wall that doubles back', () => {
+  const at = (x: number, z: number): Vector3 => [x, -1.3, z];
+  // Back to the second corner part way round: the outline touches itself there.
+  expect(crossesItself([at(0, 0), at(4, 0), at(4, -3), at(2, -3), at(4, 0), at(0, -3)])).toBe(true);
+  // Out along a wall and straight back along it.
+  expect(crossesItself([at(0, 0), at(4, 0), at(2, 0), at(2, -3)])).toBe(true);
+});
+
 test('a guided capture imports as a valid layout', () => {
   const rooms: CapturedRoom[] = [{ name: 'Bedroom', corners, ceilingHeight: 2.4 }];
   const result = importScan(buildScan(rooms));

@@ -244,6 +244,8 @@ function Message({
 }
 
 const DEFAULT_CEILING = '2.40';
+const RAISED_MESSAGE =
+  'The corners are on a table or bed, not the floor. Undo them and place them where the walls meet the floor.';
 
 /** A room scanned in this session, with its corners still anchored. */
 interface ScannedRoom {
@@ -269,11 +271,32 @@ function Scanner() {
   const [error, setError] = useState<ScannerError | null>(null);
   const [result, setResult] = useState<ImportResult | null>(null);
   const [busy, setBusy] = useState(false);
+  // A ref as well as state: two taps in a row can both run before React re-renders with busy set.
+  const busyRef = useRef(false);
+  const aimRef = useRef<AimEvent | null>(null);
+  aimRef.current = aim;
+
+  /** Runs one corner or room action at a time, ignoring taps while another is under way. */
+  const exclusively = useCallback(async (action: () => Promise<void>) => {
+    if (busyRef.current) return;
+    busyRef.current = true;
+    setBusy(true);
+    try {
+      await action();
+    } finally {
+      busyRef.current = false;
+      setBusy(false);
+    }
+  }, []);
 
   const placeholderName = `Room ${rooms.length + 1}`;
 
   const closeRoom = useCallback(
     (roomCorners: PlacedCorner[]) => {
+      if (aimRef.current?.cornersRaised) {
+        Alert.alert('Corners on furniture', RAISED_MESSAGE);
+        return;
+      }
       const points = roomCorners.map((corner) => corner.point);
       if (points.length < 3) {
         Alert.alert('Not a room yet', 'A room needs at least three corners.');
@@ -315,34 +338,54 @@ function Scanner() {
     return refreshCorners(corners, positions);
   }, [corners]);
 
-  const placeCorner = useCallback(async () => {
-    if (busy || !scanner.current) return;
-    setBusy(true);
-    try {
-      const point = await scanner.current.getAimAsync();
-      if (!point) {
-        Alert.alert('Point at the floor', 'Aim the crosshair where the walls meet the floor.');
-        return;
-      }
-      const current = await freshCorners();
-      const added = addCorner(
-        current.map((corner) => corner.point),
-        point
-      );
-      if (added.kind === 'added') {
-        const id = await scanner.current.addCornerAsync(point);
-        setCorners([...current, { id, point }]);
-      } else if (added.kind === 'closes') closeRoom(current);
-      else setCorners(current);
-    } catch (error) {
-      Alert.alert(
-        'Couldn’t place the corner',
-        error instanceof Error ? error.message : String(error)
-      );
-    } finally {
-      setBusy(false);
-    }
-  }, [busy, freshCorners, closeRoom]);
+  const placeCorner = useCallback(
+    () =>
+      exclusively(async () => {
+        if (!scanner.current) return;
+        try {
+          if (aimRef.current?.cornersRaised) {
+            Alert.alert('Corners on furniture', RAISED_MESSAGE);
+            return;
+          }
+          const point = await scanner.current.getAimAsync();
+          if (!point) {
+            Alert.alert('Point at the floor', 'Aim the crosshair where the walls meet the floor.');
+            return;
+          }
+          const current = await freshCorners();
+          const added = addCorner(
+            current.map((corner) => corner.point),
+            point
+          );
+          if (added.kind === 'added') {
+            const id = await scanner.current.addCornerAsync(point);
+            setCorners([...current, { id, point }]);
+          } else if (added.kind === 'closes') closeRoom(current);
+          else setCorners(current);
+        } catch (error) {
+          Alert.alert(
+            'Couldn’t place the corner',
+            error instanceof Error ? error.message : String(error)
+          );
+        }
+      }),
+    [exclusively, freshCorners, closeRoom]
+  );
+
+  const closeCurrentRoom = useCallback(
+    () =>
+      exclusively(async () => {
+        try {
+          closeRoom(await freshCorners());
+        } catch (error) {
+          Alert.alert(
+            'Couldn’t close the room',
+            error instanceof Error ? error.message : String(error)
+          );
+        }
+      }),
+    [exclusively, freshCorners, closeRoom]
+  );
 
   const undoCorner = useCallback(() => {
     const last = corners.at(-1);
@@ -351,30 +394,31 @@ function Scanner() {
     void scanner.current?.removeCornersAsync([last.id]).catch(() => {});
   }, [corners]);
 
-  const finish = useCallback(async () => {
-    if (!scanner.current || busy) return;
-    setBusy(true);
-    try {
-      // Read every room's corners again, so earlier rooms take ARCore's latest corrections too.
-      const all = rooms.flatMap((room) => room.corners);
-      const positions = await scanner.current.getCornerPositionsAsync(all.map((c) => c.id));
-      let next = 0;
-      const updated = rooms.map((room) => {
-        const fresh = refreshCorners(
-          room.corners,
-          positions.slice(next, next + room.corners.length)
-        );
-        next += room.corners.length;
-        return { ...room, corners: fresh };
-      });
-      setRooms(updated);
-      setResult(importScan(buildScan(updated.map(capturedRoom)), { name: 'My home' }));
-    } catch (error) {
-      Alert.alert('Couldn’t finish', error instanceof Error ? error.message : String(error));
-    } finally {
-      setBusy(false);
-    }
-  }, [busy, rooms]);
+  const finish = useCallback(
+    () =>
+      exclusively(async () => {
+        if (!scanner.current) return;
+        try {
+          // Read every room's corners again, so earlier rooms take ARCore's latest corrections too.
+          const all = rooms.flatMap((room) => room.corners);
+          const positions = await scanner.current.getCornerPositionsAsync(all.map((c) => c.id));
+          let next = 0;
+          const updated = rooms.map((room) => {
+            const fresh = refreshCorners(
+              room.corners,
+              positions.slice(next, next + room.corners.length)
+            );
+            next += room.corners.length;
+            return { ...room, corners: fresh };
+          });
+          setRooms(updated);
+          setResult(importScan(buildScan(updated.map(capturedRoom)), { name: 'My home' }));
+        } catch (error) {
+          Alert.alert('Couldn’t finish', error instanceof Error ? error.message : String(error));
+        }
+      }),
+    [exclusively, rooms]
+  );
 
   const View3d = ArcoreScannerView!;
   const points = corners.map((corner) => corner.point);
@@ -471,16 +515,7 @@ function Scanner() {
                   label="Close room"
                   kind="secondary"
                   disabled={busy}
-                  onPress={() =>
-                    void freshCorners()
-                      .then(closeRoom)
-                      .catch((error: unknown) =>
-                        Alert.alert(
-                          'Couldn’t close the room',
-                          error instanceof Error ? error.message : String(error)
-                        )
-                      )
-                  }
+                  onPress={() => void closeCurrentRoom()}
                 />
               ) : (
                 <Button

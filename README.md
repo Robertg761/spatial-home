@@ -78,7 +78,10 @@ npm run mobile       # Expo dev server; open the app with Expo Go or a developme
 npm test             # unit tests
 npm run typecheck    # every workspace
 npm run ha:check     # connect to your own Home Assistant (see .env.example)
+npm run ha:sim       # no devices? watch a simulated home instead
 ```
+
+No smart home of your own is needed to work on device features: the [simulated home](packages/ha-client/README.md#develop-without-any-devices-the-simulated-home) is a Home Assistant in memory, with lights, switches, door and motion sensors, thermostats and blinds that change over time and react to commands.
 
 In `apps/mobile`, add dependencies with `npx expo install <package>` rather than `npm install`, so they match the Expo SDK.
 

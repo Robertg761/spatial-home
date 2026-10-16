@@ -4,7 +4,15 @@
 //   HA_URL=http://homeassistant.local:8123 HA_TOKEN=... npm run ha:check
 //
 // The values can also live in a .env file at the repository root (see .env.example).
+//
+// With no Home Assistant of your own, pass --simulate (or set HA_SIMULATE=1) to use the built-in
+// simulated home instead; `npm run ha:sim` does that and watches the devices change. HA_SIM_SPEED
+// sets how many simulated seconds pass per real second (default 60), HA_SIM_SEED fixes the
+// randomness, and HA_SIM_FIXTURE points at a JSON file of your own (see the ha-client README).
 
+import { readFileSync } from 'node:fs';
+
+import type { HassEntity } from '../packages/ha-client/src/index.ts';
 import {
   EntityStore,
   HomeAssistantConnection,
@@ -12,18 +20,37 @@ import {
   resolveEntityAreaId,
 } from '../packages/ha-client/src/index.ts';
 
-const url = process.env.HA_URL;
-const token = process.env.HA_TOKEN;
 const watch = process.argv.includes('--watch');
+const simulate =
+  process.argv.includes('--simulate') || ['1', 'true'].includes(process.env.HA_SIMULATE ?? '');
 
-if (!url || !token) {
-  console.error(
-    'Set HA_URL and HA_TOKEN (a long-lived access token from your Home Assistant profile).'
-  );
-  process.exit(1);
+let connection: HomeAssistantConnection;
+if (simulate) {
+  const { SimulatedHomeAssistant, createDemoSimulator } =
+    await import('../packages/ha-client/src/simulator/index.ts');
+  const options = {
+    speed: Number(process.env.HA_SIM_SPEED ?? 60),
+    ...(process.env.HA_SIM_SEED ? { seed: Number(process.env.HA_SIM_SEED) } : {}),
+  };
+  const fixturePath = process.env.HA_SIM_FIXTURE;
+  const simulator = fixturePath
+    ? new SimulatedHomeAssistant(JSON.parse(readFileSync(fixturePath, 'utf8')), options)
+    : createDemoSimulator(options);
+  console.log(`Using the simulated home (${simulator.url}), not a real Home Assistant.`);
+  if (watch) simulator.start();
+  connection = new HomeAssistantConnection(simulator.connectionOptions);
+} else {
+  const url = process.env.HA_URL;
+  const token = process.env.HA_TOKEN;
+  if (!url || !token) {
+    console.error(
+      'Set HA_URL and HA_TOKEN (a long-lived access token from your Home Assistant profile),\n' +
+        'or run with --simulate to use the built-in simulated home.'
+    );
+    process.exit(1);
+  }
+  connection = new HomeAssistantConnection({ url, accessToken: token });
 }
-
-const connection = new HomeAssistantConnection({ url, accessToken: token });
 const entities = new EntityStore(connection);
 
 connection.onStateChange((state) => {
@@ -91,7 +118,15 @@ if (!watch) {
       console.log(`Snapshot: ${entities.size} entities`);
       return;
     }
-    for (const id of changed) console.log(`${id}: ${entities.get(id)?.state}`);
+    for (const id of changed) console.log(`${id}: ${describe(entities.get(id))}`);
     for (const id of removed) console.log(`${id}: removed`);
   });
+}
+
+/** The state, plus the attribute that moves most for thermostats, covers and lights. */
+function describe(entity: HassEntity | undefined): string {
+  if (!entity) return 'unknown';
+  const { current_temperature, current_position, brightness } = entity.attributes;
+  const detail = current_temperature ?? current_position ?? brightness;
+  return detail === undefined || detail === null ? entity.state : `${entity.state} (${detail})`;
 }

@@ -85,14 +85,14 @@ Other real servers need `url` and `accessToken`; `connectionOptions` supplies th
 
 `fixtures/demo-home.json` has a ground floor with five areas (living room, kitchen, hallway, bathroom, bedroom) and 25 entities. The entity ids match the devices placed in `packages/home-model/examples/sample-flat.json` (`light.reading_lamp`, `binary_sensor.hallway_motion`, and so on), and a test keeps it that way.
 
-| Domain          | What it does                                                                                                                            |
-| --------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| Domain          | What it does                                                                                                                           |
+| --------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
 | `light`         | On/off and brightness; some also take `rgb_color`, `hs_color` and `color_temp_kelvin`. Colour is ignored by lights that can't show it. |
-| `switch`        | On/off plugs.                                                                                                                           |
-| `binary_sensor` | Doors, windows, motion and presence that switch on and off at random, with realistic dwell times.                                       |
-| `sensor`        | Temperature and humidity that drift within limits; a battery level that stays put.                                                      |
-| `climate`       | Heats or cools the room toward its target and holds it, with hysteresis. `hvac_action` reports what it is doing.                        |
-| `cover`         | Blinds and a garage door that travel gradually: `opening`, `closing`, then `open` or `closed`, with `current_position`.                 |
+| `switch`        | On/off plugs.                                                                                                                          |
+| `binary_sensor` | Doors, windows, motion and presence that switch on and off at random, with realistic dwell times.                                      |
+| `sensor`        | Temperature and humidity that drift within limits; a battery level that stays put.                                                     |
+| `climate`       | Heats or cools the room toward its target and holds it, with hysteresis. `hvac_action` reports what it is doing.                       |
+| `cover`         | Blinds and a garage door that travel gradually: `opening`, `closing`, then `open` or `closed`, with `current_position`.                |
 
 Commands: `turn_on`, `turn_off` and `toggle` for lights and switches (and `homeassistant.*` for any of them); `climate.set_temperature`, `set_hvac_mode`; `cover.open_cover`, `close_cover`, `stop_cover`, `set_cover_position`. Targets can be `entity_id`, `area_id` or `device_id`. Bad input fails with the error code Home Assistant uses (`service_not_found`, `service_validation_error`), including for unknown entities.
 
@@ -112,11 +112,11 @@ Without `start()` nothing changes by itself, so tests drive time with `tick(seco
 
 Copy `fixtures/demo-home.json` and point `HA_SIM_FIXTURE` at it, or pass the parsed JSON to `new SimulatedHomeAssistant(fixture, options)`. A fixture lists `floors`, `areas`, `devices` and `entities`; mistakes such as a duplicate entity or an unknown area are reported by name when it loads. An entity's optional `simulate` block sets how it behaves over time:
 
-| `simulate.kind` | Entities       | Settings                                                |
-| --------------- | -------------- | ------------------------------------------------------- |
-| `random-walk`   | `sensor`       | `min`, `max`, `step` per minute; `base`, `decimals`     |
-| `flip`          | `binary_sensor` | `meanOnSeconds`, `meanOffSeconds`                       |
-| `thermostat`    | `climate`      | `ambient`, `ratePerMinute`                              |
-| `cover`         | `cover`        | `secondsToTravel`                                       |
+| `simulate.kind` | Entities        | Settings                                            |
+| --------------- | --------------- | --------------------------------------------------- |
+| `random-walk`   | `sensor`        | `min`, `max`, `step` per minute; `base`, `decimals` |
+| `flip`          | `binary_sensor` | `meanOnSeconds`, `meanOffSeconds`                   |
+| `thermostat`    | `climate`       | `ambient`, `ratePerMinute`                          |
+| `cover`         | `cover`         | `secondsToTravel`                                   |
 
 An entity without `simulate` keeps its state until a command changes it. Other domains are served as static states. The simulator is for development and tests: it only mimics the parts of Home Assistant that Spatial Home uses.

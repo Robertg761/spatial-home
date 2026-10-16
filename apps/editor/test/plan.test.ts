@@ -8,9 +8,11 @@ import {
 import sample from '@spatial-home/home-model/examples/sample-flat.json';
 import { describe, expect, test } from 'vitest';
 import {
+  addMissingFloor,
   addOpening,
   addRoom,
   deleteItem,
+  missingFloors,
   moveCorner,
   moveRoom,
   nearestWall,
@@ -20,6 +22,7 @@ import {
   uniqueId,
   uniqueIds,
   updateOpening,
+  updateRoom,
 } from '../src/editor/plan.ts';
 
 function sampleFlat(): HomeLayout {
@@ -310,6 +313,101 @@ describe('editing', () => {
     expect(uniqueId(layout, 'kitchen')).toBe('kitchen-2');
     expect(uniqueId(layout, 'outside')).toBe('outside-2');
     expect(uniqueId(layout, 'garage')).toBe('garage');
+  });
+});
+
+describe('floors', () => {
+  /** The sample with rooms on floors it doesn't have. */
+  function onMissingFloors(): HomeLayout {
+    const flat = sampleFlat();
+    const floorOf: Record<string, string> = { bathroom: 'first-floor', bedroom: 'first-floor' };
+    return {
+      ...flat,
+      rooms: flat.rooms.map((room) => ({ ...room, floorId: floorOf[room.id] ?? room.floorId })),
+    };
+  }
+
+  test('lists the floors rooms are on that the layout is missing, once each', () => {
+    expect(missingFloors(sampleFlat())).toEqual([]);
+    const layout = onMissingFloors();
+    expect(missingFloors(layout)).toEqual(['first-floor']);
+    expect(missingFloors({ ...layout, floors: [] })).toEqual(['ground-floor', 'first-floor']);
+    expect(errorCodes(layout)).toEqual(['unknown-floor', 'unknown-floor']);
+  });
+
+  test('adds a missing floor above the highest one, keeping its id', () => {
+    const { layout, id } = addMissingFloor(onMissingFloors(), 'first-floor');
+    expect(id).toBe('first-floor');
+    // Above the ground floor by the height of its rooms.
+    expect(layout.floors[1]).toEqual({
+      id: 'first-floor',
+      name: 'First floor',
+      level: 1,
+      elevation: 2.6,
+    });
+    expect(layout.rooms.find((room) => room.id === 'bedroom')!.floorId).toBe('first-floor');
+    expect(errorCodes(layout)).toEqual([]);
+  });
+
+  test('a missing floor added to a layout without floors is the ground floor', () => {
+    let layout: HomeLayout = { ...onMissingFloors(), floors: [] };
+    layout = addMissingFloor(layout, 'ground-floor').layout;
+    expect(layout.floors).toEqual([
+      { id: 'ground-floor', name: 'Ground floor', level: 0, elevation: 0 },
+    ]);
+    layout = addMissingFloor(layout, 'first-floor').layout;
+    expect(layout.floors[1]).toMatchObject({ level: 1, elevation: 2.6 });
+    expect(errorCodes(layout)).toEqual([]);
+  });
+
+  test('a missing floor whose id another item has gets a new one, and its rooms move onto it', () => {
+    const flat = sampleFlat();
+    const layout = {
+      ...flat,
+      rooms: flat.rooms.map((room) =>
+        room.id === 'bedroom' ? { ...room, floorId: 'kitchen' } : room
+      ),
+    };
+    const { layout: fixed, id } = addMissingFloor(layout, 'kitchen');
+    expect(id).toBe('kitchen-2');
+    expect(fixed.floors.map((floor) => floor.id)).toEqual(['ground-floor', 'kitchen-2']);
+    expect(fixed.rooms.find((room) => room.id === 'bedroom')!.floorId).toBe('kitchen-2');
+    expect(fixed.rooms.find((room) => room.id === 'kitchen')!.floorId).toBe('ground-floor');
+    expect(errorCodes(fixed)).toEqual([]);
+  });
+
+  test('names a missing floor from its id', () => {
+    const name = (id: string) => addMissingFloor(sampleFlat(), id).layout.floors[1]!.name;
+    expect(name('loft')).toBe('Loft');
+    expect(name('L2_upper.east')).toBe('L2 upper east');
+  });
+
+  test('moving a room to another floor updates where the openings on and into it lead', () => {
+    const flat = sampleFlat();
+    const twoFloors = addMissingFloor(flat, 'first-floor').layout;
+    const leadsTo = (l: HomeLayout, id: string) => l.openings.find((o) => o.id === id)!.connects;
+    const moved = updateRoom(twoFloors, 'living-room', { floorId: 'first-floor' });
+    expect(moved.rooms.find((room) => room.id === 'living-room')!.floorId).toBe('first-floor');
+    // Nothing is behind the doors between it and the rooms it left, on either floor.
+    expect(leadsTo(moved, 'living-room-door')).toBe(OUTSIDE);
+    expect(leadsTo(moved, 'kitchen-arch')).toBe(OUTSIDE);
+    // What is in it goes along.
+    expect(moved.fixtures.filter((f) => f.roomId === 'living-room')).toEqual(
+      flat.fixtures.filter((f) => f.roomId === 'living-room')
+    );
+    expect(errorCodes(moved)).toEqual([]);
+    // Moved back, the doors lead to it again.
+    const back = updateRoom(moved, 'living-room', { floorId: 'ground-floor' });
+    expect(back.openings).toEqual(twoFloors.openings);
+  });
+
+  test('moving a room to another floor keeps a destination set by hand', () => {
+    const twoFloors = addMissingFloor(sampleFlat(), 'first-floor').layout;
+    const layout = updateOpening(twoFloors, 'living-room-window', { connects: 'hallway' });
+    const moved = updateRoom(layout, 'living-room', { floorId: 'first-floor' });
+    expect(moved.openings.find((o) => o.id === 'living-room-window')!.connects).toBe('hallway');
+    const result = validateLayout(moved);
+    expect(result.warnings.map((issue) => issue.code)).toContain('opening-between-floors');
   });
 });
 

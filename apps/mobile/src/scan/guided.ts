@@ -2,6 +2,7 @@
 
 import { isSimplePolygon } from '@spatial-home/home-model';
 import type { ScanSessionInput, Vector3 } from '@spatial-home/scan-import';
+import { scanOpening, type MarkedOpening } from './openings.ts';
 
 /** How close, in metres, the crosshair must be to the first corner to close the room there. */
 export const CLOSE_DISTANCE = 0.25;
@@ -14,6 +15,8 @@ export interface CapturedRoom {
   name: string;
   corners: Vector3[];
   ceilingHeight: number;
+  /** Doors, windows and doorways marked on its walls. */
+  openings?: MarkedOpening[];
 }
 
 /** A corner anchored in the AR session, with where it was when last read. */
@@ -90,6 +93,7 @@ export function buildScan(rooms: CapturedRoom[]): ScanSessionInput {
       name: room.name,
       outline: room.corners,
       ceilingHeight: room.ceilingHeight,
+      openings: (room.openings ?? []).map((opening) => scanOpening(opening, room.corners)),
     })),
   };
 }

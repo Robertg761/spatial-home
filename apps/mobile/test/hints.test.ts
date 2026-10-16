@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import type { TrackingEvent, Vector3 } from '../modules/arcore-scanner/index.ts';
-import { formatDistance, parseCeilingHeight, scanHint } from '../src/scan/hints.ts';
+import { formatDistance, openingHint, parseCeilingHeight, scanHint } from '../src/scan/hints.ts';
 
 const tracking: TrackingEvent = { state: 'tracking', reason: 'none', floorFound: true };
 const three: Vector3[] = [
@@ -56,4 +56,37 @@ test('parseCeilingHeight accepts believable heights, with a comma or a point', (
   expect(parseCeilingHeight('24')).toBeNull();
   expect(parseCeilingHeight('')).toBeNull();
   expect(parseCeilingHeight('tall')).toBeNull();
+});
+
+describe('openingHint', () => {
+  const onWall = (wall: number) => ({
+    onFloor: false,
+    wall: { room: 0, wall, along: 1, height: 2, wallLength: 4 },
+  });
+  const pending = { room: 0, wall: 1, along: 1, height: 2 };
+
+  test('asks for a wall, then each corner in turn', () => {
+    expect(openingHint(tracking, { onFloor: false }, 'door', null)).toMatch(/at a wall/);
+    expect(openingHint(tracking, onWall(1), 'door', null)).toMatch(/top corner of the door/);
+    expect(openingHint(tracking, onWall(1), 'window', null)).toMatch(/bottom corner of the window/);
+    expect(openingHint(tracking, onWall(1), 'opening', pending)).toMatch(
+      /other top corner of the doorway/
+    );
+    expect(openingHint(tracking, onWall(1), 'window', pending)).toMatch(/opposite top corner/);
+  });
+
+  test('says when the crosshair moved to another wall', () => {
+    expect(openingHint(tracking, onWall(2), 'door', pending)).toMatch(/another wall/);
+  });
+
+  test('tracking problems come first', () => {
+    expect(
+      openingHint(
+        { state: 'paused', reason: 'excessive-motion', floorFound: true },
+        onWall(1),
+        'door',
+        null
+      )
+    ).toMatch(/more slowly/);
+  });
 });

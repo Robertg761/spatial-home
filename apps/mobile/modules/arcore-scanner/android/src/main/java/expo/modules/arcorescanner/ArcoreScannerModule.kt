@@ -63,6 +63,14 @@ class ArcoreScannerModule : Module() {
 
       Prop("cornerIds") { view: ArcoreScannerView, ids: List<Int> -> view.setCornerIds(ids) }
 
+      Prop("aimMode") { view: ArcoreScannerView, mode: String? -> view.setAimWalls(mode == "walls") }
+
+      Prop("wallRooms") { view: ArcoreScannerView, rooms: List<WallRoomRecord>? -> view.setWallRooms(rooms ?: emptyList()) }
+
+      Prop("openings") { view: ArcoreScannerView, rects: List<WallRectRecord>? -> view.setOpenings(rects ?: emptyList()) }
+
+      Prop("pendingCorner") { view: ArcoreScannerView, point: WallPointRecord? -> view.setPendingCorner(point) }
+
       AsyncFunction("anchorAimAsync") { view: ArcoreScannerView, ids: List<Int>, promise: Promise ->
         view.anchorAim(ids, promise)
       }
@@ -70,6 +78,8 @@ class ArcoreScannerModule : Module() {
       AsyncFunction("getCornerPositionsAsync") { view: ArcoreScannerView, ids: List<Int>, promise: Promise ->
         view.cornerPositions(ids, promise)
       }
+
+      AsyncFunction("wallAimAsync") { view: ArcoreScannerView, promise: Promise -> view.wallAim(promise) }
 
       AsyncFunction("removeCornersAsync") { view: ArcoreScannerView, ids: List<Int>, promise: Promise ->
         view.removeCorners(ids, promise)

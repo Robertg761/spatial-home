@@ -69,6 +69,10 @@ class ArcoreScannerView(context: Context, appContext: AppContext) :
   @Volatile private var resumed = false
   @Volatile private var displayChanged = true
   @Volatile private var cornerIds: List<Int> = emptyList()
+  @Volatile private var aimWalls = false
+  @Volatile private var wallRooms: List<WallRoomRecord> = emptyList()
+  @Volatile private var openings: List<WallRectRecord> = emptyList()
+  @Volatile private var pendingCorner: WallPointRecord? = null
   // Set on the GL thread when ARCore loses the camera, so the frames that follow don't retry it.
   @Volatile private var cameraLost = false
 
@@ -100,7 +104,7 @@ class ArcoreScannerView(context: Context, appContext: AppContext) :
   private data class Aim(val x: Float, val y: Float, val z: Float)
 
   /** What a frame found, for the jobs that run at its end. Null fields when it wasn't tracking. */
-  private class FrameState(val tracking: Boolean, val aim: Aim?, val lowestFloor: Float?)
+  private class FrameState(val tracking: Boolean, val aim: Aim?, val lowestFloor: Float?, val wallHit: WallHitPoint?)
 
   private class GlJob(val promise: Promise, val run: (Session, FrameState) -> Unit)
 
@@ -111,6 +115,56 @@ class ArcoreScannerView(context: Context, appContext: AppContext) :
 
   fun setCornerIds(ids: List<Int>) {
     cornerIds = ids
+  }
+
+  /** Aims the crosshair at the walls of `wallRooms` rather than the floor, to mark doors and windows. */
+  fun setAimWalls(value: Boolean) {
+    aimWalls = value
+  }
+
+  fun setWallRooms(rooms: List<WallRoomRecord>) {
+    wallRooms = rooms
+  }
+
+  fun setOpenings(rects: List<WallRectRecord>) {
+    openings = rects
+  }
+
+  fun setPendingCorner(point: WallPointRecord?) {
+    pendingCorner = point
+  }
+
+  /**
+   * Where the crosshair meets a wall, as the next frame sees it: the room and wall, metres along it
+   * and above the floor, and its length. Null when it isn't on a wall or the view isn't aiming at
+   * walls. Fails with "not-tracking" while ARCore isn't tracking that room's corners.
+   */
+  fun wallAim(promise: Promise) {
+    onGlThread(promise) { _, frame ->
+      if (!frame.tracking) {
+        promise.reject("not-tracking", NOT_TRACKING, null)
+        return@onGlThread
+      }
+      val hit = frame.wallHit
+      if (hit == null) {
+        promise.resolve(null)
+        return@onGlThread
+      }
+      val ids = wallRooms.getOrNull(hit.room)?.cornerIds ?: emptyList()
+      if (trackedPoses(ids, frame) == null) {
+        promise.reject("not-tracking", NOT_TRACKING, null)
+        return@onGlThread
+      }
+      promise.resolve(
+        mapOf(
+          "room" to hit.room,
+          "wall" to hit.wall,
+          "along" to hit.along.toDouble(),
+          "height" to hit.height.toDouble(),
+          "wallLength" to hit.wallLength.toDouble()
+        )
+      )
+    }
   }
 
   /**
@@ -369,7 +423,7 @@ class ArcoreScannerView(context: Context, appContext: AppContext) :
     }
     if (camera.trackingState != TrackingState.TRACKING) {
       reportTracking(camera, false)
-      runPendingJobs(current, FrameState(false, null, null))
+      runPendingJobs(current, FrameState(false, null, null, null))
       return
     }
     // Found means a plane that counts as the floor, not just any surface, so the screen keeps
@@ -384,14 +438,19 @@ class ArcoreScannerView(context: Context, appContext: AppContext) :
     // Read from the anchors every frame, so the corners follow ARCore's corrections.
     val placed = cornerIds.mapNotNull { anchors[it]?.pose }.map { floatArrayOf(it.tx(), it.ty(), it.tz()) }
     floorHeight = placed.firstOrNull()?.get(1) ?: lowest
-    val aim = floorHeight?.let { aimAt(camera, it) }
+    val rooms = closedRooms()
+    val walls = aimWalls
+    val aim = if (walls) null else floorHeight?.let { aimAt(camera, it) }
+    val wallHit = if (walls) centreRay(camera).let { (origin, direction) -> hitWall(origin, direction, rooms, MAX_AIM_DISTANCE) } else null
     // The corners went on a table or bed found before the floor was.
     val cornersRaised = placed.isNotEmpty() && lowest != null && placed[0][1] - lowest > RAISED_MARGIN
 
     drawFloors(floors)
+    drawRooms(rooms)
+    drawOpenings(rooms, wallHit)
     drawCorners(placed, aim)
-    reportAim(aim, placed, cornersRaised)
-    runPendingJobs(current, FrameState(true, aim, lowest))
+    reportAim(aim, placed, cornersRaised, wallHit)
+    runPendingJobs(current, FrameState(true, aim, lowest, wallHit))
   }
 
   /**
@@ -424,17 +483,92 @@ class ArcoreScannerView(context: Context, appContext: AppContext) :
    * rather than the detected area itself.
    */
   private fun aimAt(camera: Camera, floor: Float): Aim? {
+    val (origin, direction) = centreRay(camera)
+    if (direction[1] > -0.15f) return null
+    val t = (floor - origin[1]) / direction[1]
+    if (t <= 0f || t > MAX_AIM_DISTANCE) return null
+    return Aim(origin[0] + direction[0] * t, floor, origin[2] + direction[2] * t)
+  }
+
+  /** The line from the camera through the centre of the screen, as its origin and direction. */
+  private fun centreRay(camera: Camera): Pair<FloatArray, FloatArray> {
     val pose = camera.displayOrientedPose
     val z = pose.zAxis
     // The camera looks along its -z axis.
     val dx = -z[0]
     val dy = -z[1]
     val dz = -z[2]
-    if (dy > -0.15f) return null
-    val t = (floor - pose.ty()) / dy
-    if (t <= 0f || t > MAX_AIM_DISTANCE) return null
-    return Aim(pose.tx() + dx * t, floor, pose.tz() + dz * t)
+    return floatArrayOf(pose.tx(), pose.ty(), pose.tz()) to floatArrayOf(dx, dy, dz)
   }
+
+  /**
+   * The closed rooms of `wallRooms`, with their corners where ARCore puts the anchors now. A room
+   * with a corner whose anchor is gone is left out. Indexes stay those of `wallRooms`.
+   */
+  private fun closedRooms(): List<RoomWalls> =
+    wallRooms.mapIndexedNotNull { index, room ->
+      val poses = room.cornerIds.map { anchors[it]?.pose ?: return@mapIndexedNotNull null }
+      if (poses.size < 3) return@mapIndexedNotNull null
+      RoomWalls(index, poses.map { floatArrayOf(it.tx(), it.ty(), it.tz()) }, room.ceilingHeight.toFloat())
+    }
+
+  /** Closed rooms as their floor outline, ceiling outline and the corners between. */
+  private fun drawRooms(rooms: List<RoomWalls>) {
+    val lines = ArrayList<Float>()
+    for (room in rooms) {
+      for (wall in 0 until room.count) {
+        val a = room.start(wall)
+        val b = room.end(wall)
+        for (lift in floatArrayOf(0f, room.ceiling)) {
+          lines.addAll(listOf(a[0], a[1] + lift, a[2], b[0], b[1] + lift, b[2]))
+        }
+        lines.addAll(listOf(a[0], a[1], a[2], a[0], a[1] + room.ceiling, a[2]))
+      }
+    }
+    overlay.draw(GLES20.GL_LINES, lines.toFloatArray(), viewProjection, ROOM_COLOR, lineWidth = 3f)
+  }
+
+  /**
+   * The doors and windows marked so far, the one being marked from its first corner to the
+   * crosshair, and the crosshair's point on the wall.
+   */
+  private fun drawOpenings(rooms: List<RoomWalls>, hit: WallHitPoint?) {
+    val byIndex = rooms.associateBy { it.index }
+    for (rect in openings) {
+      val room = byIndex[rect.room] ?: continue
+      if (rect.wall !in 0 until room.count) continue
+      overlay.draw(
+        GLES20.GL_LINE_LOOP,
+        wallRect(room, rect.wall, rect.from.toFloat(), rect.to.toFloat(), rect.bottom.toFloat(), rect.top.toFloat()),
+        viewProjection,
+        OPENING_COLOR,
+        lineWidth = 6f
+      )
+    }
+    val pending = pendingCorner
+    val pendingRoom = pending?.let { byIndex[it.room] }
+    if (pending != null && pendingRoom != null && pending.wall in 0 until pendingRoom.count) {
+      val along = pending.along.toFloat()
+      val height = pending.height.toFloat()
+      if (hit != null && hit.room == pending.room && hit.wall == pending.wall) {
+        overlay.draw(
+          GLES20.GL_LINE_LOOP,
+          wallRect(pendingRoom, pending.wall, along, hit.along, height, hit.height),
+          viewProjection,
+          PREVIEW_COLOR
+        )
+      }
+      overlay.draw(GLES20.GL_POINTS, pendingRoom.point(pending.wall, along, height), viewProjection, OPENING_COLOR, pointSize = 22f)
+    }
+    if (hit != null) {
+      val room = byIndex[hit.room] ?: return
+      overlay.draw(GLES20.GL_POINTS, room.point(hit.wall, hit.along, hit.height), viewProjection, AIM_COLOR, pointSize = 30f)
+    }
+  }
+
+  /** The four corners, in order, of a rectangle on a wall between two distances along it and two heights. */
+  private fun wallRect(room: RoomWalls, wall: Int, from: Float, to: Float, bottom: Float, top: Float): FloatArray =
+    room.point(wall, from, bottom) + room.point(wall, to, bottom) + room.point(wall, to, top) + room.point(wall, from, top)
 
   private fun drawFloors(planes: List<Plane>) {
     val points = ArrayList<Float>()
@@ -501,7 +635,7 @@ class ArcoreScannerView(context: Context, appContext: AppContext) :
   }
 
   /** Tells JavaScript where the crosshair is a few times a second, for the live measurements. */
-  private fun reportAim(aim: Aim?, placed: List<FloatArray>, cornersRaised: Boolean) {
+  private fun reportAim(aim: Aim?, placed: List<FloatArray>, cornersRaised: Boolean, wallHit: WallHitPoint?) {
     val now = System.currentTimeMillis()
     if (now - lastAimEventAt < AIM_EVENT_INTERVAL_MS) return
     lastAimEventAt = now
@@ -510,6 +644,15 @@ class ArcoreScannerView(context: Context, appContext: AppContext) :
       event["point"] = listOf(aim.x.toDouble(), aim.y.toDouble(), aim.z.toDouble())
       placed.lastOrNull()?.let { event["fromLast"] = hypot((aim.x - it[0]).toDouble(), (aim.z - it[2]).toDouble()) }
       placed.firstOrNull()?.let { event["toFirst"] = hypot((aim.x - it[0]).toDouble(), (aim.z - it[2]).toDouble()) }
+    }
+    if (wallHit != null) {
+      event["wall"] = mapOf(
+        "room" to wallHit.room,
+        "wall" to wallHit.wall,
+        "along" to wallHit.along.toDouble(),
+        "height" to wallHit.height.toDouble(),
+        "wallLength" to wallHit.wallLength.toDouble()
+      )
     }
     post { onAim(event) }
   }
@@ -550,5 +693,7 @@ class ArcoreScannerView(context: Context, appContext: AppContext) :
     private val WALL_COLOR = floatArrayOf(0.15f, 0.39f, 0.92f, 1f)
     private val PREVIEW_COLOR = floatArrayOf(0.15f, 0.39f, 0.92f, 0.6f)
     private val AIM_COLOR = floatArrayOf(1f, 1f, 1f, 0.95f)
+    private val ROOM_COLOR = floatArrayOf(0.15f, 0.39f, 0.92f, 0.45f)
+    private val OPENING_COLOR = floatArrayOf(0.98f, 0.62f, 0.1f, 1f)
   }
 }

@@ -32,6 +32,44 @@ export interface AimEvent {
   toFirst?: number;
   /** The floor has turned up lower than the corners placed so far, which are on a table or bed. */
   cornersRaised?: boolean;
+  /** Where the crosshair meets a wall, when aiming at walls. */
+  wall?: WallHit;
+}
+
+/**
+ * A point on the wall of a closed room: room `room` of `wallRooms`, wall `wall` from its corner
+ * `wall` to the next. Kept as a position on the wall rather than in the world, so it moves with the
+ * wall's anchored corners.
+ */
+export interface WallPoint {
+  room: number;
+  wall: number;
+  /** Metres along the wall from its first corner. */
+  along: number;
+  /** Metres above the floor. */
+  height: number;
+}
+
+export interface WallHit extends WallPoint {
+  /** The wall's length, in metres. */
+  wallLength: number;
+}
+
+/** A closed room whose walls can be aimed at. */
+export interface WallRoom {
+  /** The room's corners, by anchor id, in order around it. */
+  cornerIds: number[];
+  ceilingHeight: number;
+}
+
+/** A rectangle on a wall, such as a door or window, drawn over the camera image. */
+export interface WallRect {
+  room: number;
+  wall: number;
+  from: number;
+  to: number;
+  bottom: number;
+  top: number;
 }
 
 export interface ScannerError {
@@ -51,6 +89,17 @@ export interface ArcoreScannerViewProps extends ViewProps {
   active: boolean;
   /** The current room's corners, by the ids `anchorAimAsync` gave them, drawn joined by walls. */
   cornerIds: number[];
+  /**
+   * What the crosshair aims at: the floor, for placing corners, or the walls of `wallRooms`, for
+   * marking doors and windows. Defaults to the floor.
+   */
+  aimMode?: 'floor' | 'walls';
+  /** Closed rooms, drawn as walls and aimed at in `walls` mode. */
+  wallRooms?: WallRoom[];
+  /** Doors and windows marked so far, drawn on their walls. */
+  openings?: WallRect[];
+  /** The first corner of a door or window being marked, drawn with the crosshair's corner. */
+  pendingCorner?: WallPoint | null;
   onTrackingChange?: (event: NativeSyntheticEvent<TrackingEvent>) => void;
   onAim?: (event: NativeSyntheticEvent<AimEvent>) => void;
   onError?: (event: NativeSyntheticEvent<ScannerError>) => void;
@@ -81,6 +130,12 @@ export interface ArcoreScannerViewRef {
    */
   getCornerPositionsAsync(ids: number[]): Promise<(Vector3 | null)[]>;
   removeCornersAsync(ids: number[]): Promise<void>;
+  /**
+   * Where the crosshair meets a wall of `wallRooms`, as the next frame sees it, or null when it isn't
+   * on one or the view isn't aiming at walls. Rejects with `not-tracking` while ARCore isn't
+   * tracking that room's corners.
+   */
+  wallAimAsync(): Promise<WallHit | null>;
 }
 
 interface ArcoreScannerNativeModule {

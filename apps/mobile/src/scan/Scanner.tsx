@@ -3,7 +3,15 @@
 
 import { importScan, type ImportResult } from '@spatial-home/scan-import';
 import { useCallback, useRef, useState } from 'react';
-import { Alert, StyleSheet, Text, TextInput, View } from 'react-native';
+import {
+  Alert,
+  Linking,
+  PermissionsAndroid,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   ArcoreScannerView,
@@ -40,6 +48,16 @@ interface ScannedRoom {
 
 function capturedRoom(room: ScannedRoom): CapturedRoom {
   return { ...room, corners: room.corners.map((corner) => corner.point) };
+}
+
+/**
+ * Asks for the camera again after it was taken away mid-scan, such as in Settings or when a one-time
+ * permission ran out. The scan stays on screen, so the rooms already scanned are kept: the view
+ * starts the camera again when the app comes back from the prompt or from Settings.
+ */
+async function allowCamera() {
+  const result = await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.CAMERA);
+  if (result === PermissionsAndroid.RESULTS.NEVER_ASK_AGAIN) await Linking.openSettings();
 }
 
 export function Scanner() {
@@ -264,6 +282,9 @@ export function Scanner() {
             <Text style={styles.hint}>
               {error ? error.message : scanHint(tracking, aim, points)}
             </Text>
+            {error?.code === 'camera-permission' ? (
+              <Button label="Allow the camera" onPress={() => void allowCamera()} />
+            ) : null}
             <Text style={styles.progress}>
               {rooms.length > 0
                 ? `${rooms.length} room${rooms.length === 1 ? '' : 's'} done · `

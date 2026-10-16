@@ -1,0 +1,8 @@
+{
+  "name": "arcore-scanner",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Guided room capture on Android with ARCore, as an Expo module",
+  "license": "Apache-2.0",
+  "main": "index.ts"
+}

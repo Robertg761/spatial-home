@@ -1,0 +1,21 @@
+plugins {
+  id 'com.android.library'
+  id 'expo-module-gradle-plugin'
+}
+
+group = 'expo.modules.arcorescanner'
+version = '0.1.0'
+
+android {
+  namespace "expo.modules.arcorescanner"
+  defaultConfig {
+    versionCode 1
+    versionName "0.1.0"
+  }
+}
+
+dependencies {
+  // ARCore for motion tracking and floor detection. Its version also sets the minimum ARCore
+  // app version phones need, which Play Services for AR installs or updates when asked.
+  implementation 'com.google.ar:core:1.56.0'
+}

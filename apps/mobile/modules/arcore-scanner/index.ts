@@ -69,11 +69,15 @@ export interface AnchoredAim {
 export interface ArcoreScannerViewRef {
   /**
    * Anchors a corner where the crosshair meets the floor, in the frame that found that point, or
-   * resolves with null when the crosshair isn't on the floor. An anchored corner stays on the same
+   * resolves with null when the crosshair isn't on the floor. Rejects with `not-tracking` while
+   * ARCore isn't tracking the room's corners. An anchored corner stays on the same
    * spot on the floor as ARCore refines its map of the room, so read it again before using it.
    */
   anchorAimAsync(cornerIds: number[]): Promise<AnchoredAim | null>;
-  /** Where the corners are now, in the same order, with null for any that were removed. */
+  /**
+   * Where the corners are now, in the same order, with null for any that were removed. Rejects with
+   * `not-tracking` while ARCore isn't tracking them, when their positions may be far off.
+   */
   getCornerPositionsAsync(ids: number[]): Promise<(Vector3 | null)[]>;
   removeCornersAsync(ids: number[]): Promise<void>;
 }

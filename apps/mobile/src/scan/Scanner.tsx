@@ -329,14 +329,19 @@ export function Scanner() {
                 <Button
                   label="Close room"
                   kind="secondary"
-                  disabled={busy}
+                  disabled={busy || tracking?.state !== 'tracking'}
                   onPress={() => void closeCurrentRoom()}
                 />
               ) : (
                 <Button
                   label="Done"
                   kind="secondary"
-                  disabled={busy || rooms.length === 0 || corners.length > 0}
+                  disabled={
+                    busy ||
+                    tracking?.state !== 'tracking' ||
+                    rooms.length === 0 ||
+                    corners.length > 0
+                  }
                   onPress={() => void finish()}
                 />
               )}

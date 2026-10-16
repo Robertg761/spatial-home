@@ -28,7 +28,7 @@ ARCore is declared optional, so the app still installs on phones without it. The
 
 Points are in ARCore's world frame: metres, y up, and the session's starting point as the origin. The room scan format uses the same frame.
 
-Each corner is an ARCore anchor. ARCore keeps refining its map of the room while you scan, and an anchor stays on the same spot of the real floor as it does, while a saved coordinate would drift. So the screen keeps the anchors' ids and reads their positions again before it measures anything or imports the scan. For the same reason, `anchorAimAsync()` makes the anchor in the frame that found the aim, and gives the room's corners as that frame saw them.
+Each corner is an ARCore anchor. ARCore keeps refining its map of the room while you scan, and an anchor stays on the same spot of the real floor as it does, while a saved coordinate would drift. So the screen keeps the anchors' ids and reads their positions again before it measures anything or imports the scan. For the same reason, `anchorAimAsync()` makes the anchor in the frame that found the aim, and gives the room's corners as that frame saw them. Both refuse, with `not-tracking`, while ARCore isn't tracking the corners, since their positions may then be far off.
 
 Every room in one scan has to come from one AR session, so they share that frame. The scan screen keeps the session running while it shows the result, because the person may walk to the next room before scanning it, and ARCore has to keep tracking on the way. Leaving the screen ends the session, and ARCore may not keep the same origin after the app has been in the background.
 

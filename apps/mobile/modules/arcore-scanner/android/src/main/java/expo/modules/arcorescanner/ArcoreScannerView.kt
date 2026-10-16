@@ -100,7 +100,7 @@ class ArcoreScannerView(context: Context, appContext: AppContext) :
   private data class Aim(val x: Float, val y: Float, val z: Float)
 
   /** What a frame found, for the jobs that run at its end. Null fields when it wasn't tracking. */
-  private class FrameState(val aim: Aim?, val lowestFloor: Float?)
+  private class FrameState(val tracking: Boolean, val aim: Aim?, val lowestFloor: Float?)
 
   private class GlJob(val promise: Promise, val run: (Session, FrameState) -> Unit)
 
@@ -127,10 +127,14 @@ class ArcoreScannerView(context: Context, appContext: AppContext) :
         promise.resolve(null)
         return@onGlThread
       }
+      val corners = trackedPoses(ids, frame)
+      if (corners == null) {
+        promise.reject("not-tracking", NOT_TRACKING, null)
+        return@onGlThread
+      }
       val anchor = session.createAnchor(Pose.makeTranslation(aim.x, aim.y, aim.z))
       val id = nextAnchorId++
       anchors[id] = anchor
-      val corners = ids.map { anchors[it]?.pose }
       val first = corners.firstOrNull()
       val lowest = frame.lowestFloor
       promise.resolve(
@@ -144,11 +148,28 @@ class ArcoreScannerView(context: Context, appContext: AppContext) :
     }
   }
 
-  /** Where the corners are now, in the same order, with null for any that no longer exist. */
+  /**
+   * Where the corners are now, in the same order, with null for any that no longer exist. Fails
+   * with "not-tracking" while ARCore isn't tracking them, when their poses may be far off, so the
+   * caller can try again once it is.
+   */
   fun cornerPositions(ids: List<Int>, promise: Promise) {
-    onGlThread(promise) { _, _ ->
-      promise.resolve(ids.map { id -> anchors[id]?.pose?.let { listOf(it.tx().toDouble(), it.ty().toDouble(), it.tz().toDouble()) } })
+    onGlThread(promise) { _, frame ->
+      val poses = trackedPoses(ids, frame)
+      if (poses == null) promise.reject("not-tracking", NOT_TRACKING, null)
+      else promise.resolve(poses.map { pose -> pose?.let { listOf(it.tx().toDouble(), it.ty().toDouble(), it.tz().toDouble()) } })
     }
+  }
+
+  /**
+   * The anchors' poses, with null for any that no longer exist, or null for all of them unless the
+   * frame and every one of these anchors is tracking. ARCore says an untracked pose may be far off.
+   */
+  private fun trackedPoses(ids: List<Int>, frame: FrameState): List<Pose?>? {
+    if (!frame.tracking) return null
+    val found = ids.map { anchors[it] }
+    if (found.any { it != null && it.trackingState != TrackingState.TRACKING }) return null
+    return found.map { it?.pose }
   }
 
   fun removeCorners(ids: List<Int>, promise: Promise) {
@@ -348,7 +369,7 @@ class ArcoreScannerView(context: Context, appContext: AppContext) :
     }
     reportTracking(camera, floors.isNotEmpty())
     if (camera.trackingState != TrackingState.TRACKING) {
-      runPendingJobs(current, FrameState(null, null))
+      runPendingJobs(current, FrameState(false, null, null))
       return
     }
 
@@ -367,7 +388,7 @@ class ArcoreScannerView(context: Context, appContext: AppContext) :
     drawFloors(floors)
     drawCorners(placed, aim)
     reportAim(aim, placed, cornersRaised)
-    runPendingJobs(current, FrameState(aim, lowest))
+    runPendingJobs(current, FrameState(true, aim, lowest))
   }
 
   /**
@@ -513,6 +534,7 @@ class ArcoreScannerView(context: Context, appContext: AppContext) :
     private const val MIN_FLOOR_AREA = 0.25f
     private const val AIM_EVENT_INTERVAL_MS = 150L
     private const val CAMERA_RETRY_MS = 2000L
+    private const val NOT_TRACKING = "The phone lost track of the room. Move it slowly until it finds its place, then try again."
     private const val NOT_RUNNING = "The camera isn’t running. Wait for it to start again."
     private val FLOOR_COLOR = floatArrayOf(1f, 1f, 1f, 0.35f)
     private val WALL_COLOR = floatArrayOf(0.15f, 0.39f, 0.92f, 1f)

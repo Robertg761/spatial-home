@@ -416,22 +416,34 @@ function overlapMessage(earlier: PlacedOpening, later: PlacedOpening): string | 
     earlier.room.floorId === later.room.floorId &&
     dot(earlier.outward, later.outward) < FACING_EACH_OTHER;
   if (!across) return null;
-  // Where the later opening's ends are, measured along the earlier one's wall and out from it.
-  const measure = (distanceAlong: number) => {
-    const point: Point2 = [
-      later.wall.start[0] + later.along[0] * distanceAlong - earlier.wall.start[0],
-      later.wall.start[1] + later.along[1] * distanceAlong - earlier.wall.start[1],
-    ];
-    return { along: dot(point, earlier.along), out: dot(point, earlier.outward) };
-  };
-  const [a, b] = [measure(later.from), measure(later.to)];
-  return Math.max(Math.abs(a.out), Math.abs(b.out)) <= MAX_WALL_THICKNESS + EPSILON &&
-    spansOverlap(
-      [earlier.from, earlier.to],
-      [Math.min(a.along, b.along), Math.max(a.along, b.along)]
-    )
+  // Measured from both walls, so the answer doesn't depend on which opening is listed first.
+  return overlapsAcross(earlier, later) || overlapsAcross(later, earlier)
     ? `"${second}" overlaps "${first}" across the wall between "${earlier.room.id}" and "${later.room.id}"; they may be one opening recorded from both rooms.`
     : null;
+}
+
+/**
+ * Whether `other` takes up some of the same stretch of wall as `one`, seen from `one`'s wall, and
+ * is within a wall's thickness of it all along that shared stretch. Walls out of line drift apart,
+ * so the gap is measured only where the openings overlap, not at the far ends of a wider one.
+ */
+function overlapsAcross(one: PlacedOpening, other: PlacedOpening): boolean {
+  // Where the other opening's ends are, measured along this one's wall and out from it.
+  const measure = (distanceAlong: number) => {
+    const point: Point2 = [
+      other.wall.start[0] + other.along[0] * distanceAlong - one.wall.start[0],
+      other.wall.start[1] + other.along[1] * distanceAlong - one.wall.start[1],
+    ];
+    return { along: dot(point, one.along), out: dot(point, one.outward) };
+  };
+  const [a, b] = [measure(other.from), measure(other.to)];
+  const start = Math.max(one.from, Math.min(a.along, b.along));
+  const end = Math.min(one.to, Math.max(a.along, b.along));
+  if (end - start <= EPSILON) return false;
+  // The walls face each other, so the other opening's ends are apart along this wall.
+  const outAt = (along: number) =>
+    a.out + ((b.out - a.out) * (along - a.along)) / (b.along - a.along);
+  return Math.max(Math.abs(outAt(start)), Math.abs(outAt(end))) <= MAX_WALL_THICKNESS + EPSILON;
 }
 
 /** Whether two ranges share more than a touching end. */

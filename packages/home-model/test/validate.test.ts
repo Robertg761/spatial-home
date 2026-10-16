@@ -327,6 +327,24 @@ describe('validateLayout', () => {
       expect(result.warnings[0]?.message).toContain('recorded from both rooms');
     });
 
+    test('finds one opening across a wall out of line, whichever is listed first', () => {
+      // The landing's side of the wall leans away, from 10 cm off at the bottom of the plan to
+      // 70 cm at the top. Only the narrow study door's stretch, near the bottom, is close enough.
+      const layout = besideEachOther(0.1, [0.6, 2.6], [0.5, 1.53]);
+      layout.rooms[1]!.outline = [
+        [4.1, 0],
+        [7, 0],
+        [7, 3],
+        [4.7, 3],
+      ];
+      const reversed = { ...layout, openings: [...layout.openings].reverse() };
+      for (const order of [layout, reversed]) {
+        expect(warningsOf(validateLayout(order))).toEqual([
+          { code: 'opening-overlap', path: ['openings', 1, 'offset'] },
+        ]);
+      }
+    });
+
     test('accepts openings across a wall that are side by side, or lead elsewhere', () => {
       // 1.5 m along the study's wall is 1.5 m along the landing's, as they run opposite ways; 0.5 m
       // along the landing's is 2.5 m along the study's.

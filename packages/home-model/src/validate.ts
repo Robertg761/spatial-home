@@ -1,11 +1,22 @@
 import type { z } from 'zod';
-import { EPSILON, isSimplePolygon, pointInPolygon, polygonArea, roomWalls } from './geometry.ts';
+import {
+  EPSILON,
+  MAX_WALL_THICKNESS,
+  isSimplePolygon,
+  pointInPolygon,
+  polygonArea,
+  roomWalls,
+  wallOutwardNormal,
+  type Wall,
+} from './geometry.ts';
 import {
   HomeLayoutSchema,
   LAYOUT_FORMAT,
   LAYOUT_VERSION,
   OUTSIDE,
   type HomeLayout,
+  type Opening,
+  type Point2,
   type Room,
 } from './schema.ts';
 
@@ -245,6 +256,8 @@ function checkLayout(layout: HomeLayout): LayoutIssue[] {
     }
   });
 
+  issues.push(...checkOpeningOverlaps(layout, rooms));
+
   layout.fixtures.forEach((fixture, index) => {
     const path = ['fixtures', index];
     const room = rooms.get(fixture.roomId);
@@ -314,6 +327,132 @@ function checkLayout(layout: HomeLayout): LayoutIssue[] {
   });
 
   return issues;
+}
+
+/** An opening on its wall: the stretch of the wall it takes up, and how high it reaches. */
+interface PlacedOpening {
+  index: number;
+  opening: Opening;
+  room: Room;
+  wall: Wall;
+  /** Unit vector along the wall, from its start towards its end. */
+  along: Point2;
+  /** Unit vector out of the room. */
+  outward: Point2;
+  /** Distances along the wall from its start. */
+  from: number;
+  to: number;
+  /** Heights above the floor. */
+  bottom: number;
+  top: number;
+}
+
+/**
+ * Walls whose outward directions are closer to opposite than this (about 25°) face each other, as
+ * the two sides of one wall between rooms do, even when scanned a little out of line.
+ */
+const FACING_EACH_OTHER = -0.9;
+
+/**
+ * Openings that take up the same part of a wall: on the same wall of a room, or on the two sides
+ * of the wall between two rooms that each lead into the other, which is one opening recorded from
+ * both rooms. Each is reported once, on the later of the two, so the earlier one stays as it is.
+ * Openings can sit one above the other, such as a window over a door, so they only overlap if
+ * their heights do too.
+ */
+function checkOpeningOverlaps(layout: HomeLayout, rooms: Map<string, Room>): LayoutIssue[] {
+  const placed: PlacedOpening[] = [];
+  layout.openings.forEach((opening, index) => {
+    const room = rooms.get(opening.wall.roomId);
+    // An opening in a missing room or wall is already reported, and has nowhere to overlap.
+    const wall = room && isUsableOutline(room) ? roomWalls(room)[opening.wall.index] : undefined;
+    if (!room || !wall) return;
+    const bottom = opening.kind === 'window' ? opening.sillHeight : 0;
+    placed.push({
+      index,
+      opening,
+      room,
+      wall,
+      along: [
+        (wall.end[0] - wall.start[0]) / wall.length,
+        (wall.end[1] - wall.start[1]) / wall.length,
+      ],
+      outward: wallOutwardNormal(room, wall.index),
+      from: opening.offset - opening.width / 2,
+      to: opening.offset + opening.width / 2,
+      bottom,
+      top: bottom + opening.height,
+    });
+  });
+
+  const issues: LayoutIssue[] = [];
+  placed.forEach((later, i) => {
+    for (const earlier of placed.slice(0, i)) {
+      const message = overlapMessage(earlier, later);
+      if (message) {
+        issues.push(warning('opening-overlap', ['openings', later.index, 'offset'], message));
+        break;
+      }
+    }
+  });
+  return issues;
+}
+
+function overlapMessage(earlier: PlacedOpening, later: PlacedOpening): string | null {
+  const first = earlier.opening.id;
+  const second = later.opening.id;
+  if (!spansOverlap([earlier.bottom, earlier.top], [later.bottom, later.top])) return null;
+
+  if (earlier.room === later.room) {
+    return earlier.wall.index === later.wall.index &&
+      spansOverlap([earlier.from, earlier.to], [later.from, later.to])
+      ? `"${second}" overlaps "${first}" in the same wall of "${later.room.id}".`
+      : null;
+  }
+
+  const across =
+    earlier.opening.connects === later.room.id &&
+    later.opening.connects === earlier.room.id &&
+    earlier.room.floorId === later.room.floorId &&
+    dot(earlier.outward, later.outward) < FACING_EACH_OTHER;
+  if (!across) return null;
+  // Measured from both walls, so the answer doesn't depend on which opening is listed first.
+  return overlapsAcross(earlier, later) || overlapsAcross(later, earlier)
+    ? `"${second}" overlaps "${first}" across the wall between "${earlier.room.id}" and "${later.room.id}"; they may be one opening recorded from both rooms.`
+    : null;
+}
+
+/**
+ * Whether `other` takes up some of the same stretch of wall as `one`, seen from `one`'s wall, and
+ * is within a wall's thickness of it all along that shared stretch. Walls out of line drift apart,
+ * so the gap is measured only where the openings overlap, not at the far ends of a wider one.
+ */
+function overlapsAcross(one: PlacedOpening, other: PlacedOpening): boolean {
+  // Where the other opening's ends are, measured along this one's wall and out from it.
+  const measure = (distanceAlong: number) => {
+    const point: Point2 = [
+      other.wall.start[0] + other.along[0] * distanceAlong - one.wall.start[0],
+      other.wall.start[1] + other.along[1] * distanceAlong - one.wall.start[1],
+    ];
+    return { along: dot(point, one.along), out: dot(point, one.outward) };
+  };
+  const [a, b] = [measure(other.from), measure(other.to)];
+  const start = Math.max(one.from, Math.min(a.along, b.along));
+  const end = Math.min(one.to, Math.max(a.along, b.along));
+  if (end - start <= EPSILON) return false;
+  // The walls face each other, so the other opening's ends are apart along this wall.
+  const outAt = (along: number) =>
+    a.out + ((b.out - a.out) * (along - a.along)) / (b.along - a.along);
+  return Math.max(Math.abs(outAt(start)), Math.abs(outAt(end))) <= MAX_WALL_THICKNESS + EPSILON;
+}
+
+/** Whether two ranges share more than a touching end. */
+function spansOverlap([start1, end1]: [number, number], [start2, end2]: [number, number]): boolean {
+  return Math.min(end1, end2) - Math.max(start1, start2) > EPSILON;
+}
+
+function dot([x1, y1]: Point2, [x2, y2]: Point2): number {
+  return x1 * x2 + y1 * y2;
 }
 
 function isUsableOutline(room: Room): boolean {

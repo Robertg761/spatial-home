@@ -142,7 +142,7 @@ class ArcoreScannerView(context: Context, appContext: AppContext) :
           "id" to id,
           "point" to listOf(aim.x.toDouble(), aim.y.toDouble(), aim.z.toDouble()),
           "corners" to corners.map { it?.let { pose -> listOf(pose.tx().toDouble(), pose.ty().toDouble(), pose.tz().toDouble()) } },
-          "cornersRaised" to (first != null && lowest != null && first.ty() - lowest > MIN_FLOOR_DROP)
+          "cornersRaised" to (first != null && lowest != null && first.ty() - lowest > RAISED_MARGIN)
         )
       )
     }
@@ -367,11 +367,15 @@ class ArcoreScannerView(context: Context, appContext: AppContext) :
         it.subsumedBy == null &&
         it.type == Plane.Type.HORIZONTAL_UPWARD_FACING
     }
-    reportTracking(camera, floors.isNotEmpty())
     if (camera.trackingState != TrackingState.TRACKING) {
+      reportTracking(camera, false)
       runPendingJobs(current, FrameState(false, null, null))
       return
     }
+    // Found means a plane that counts as the floor, not just any surface, so the screen keeps
+    // asking for the floor while ARCore has only found a table.
+    val lowest = floorHeightFrom(floors, camera)
+    reportTracking(camera, lowest != null)
 
     camera.getProjectionMatrix(projection, 0, 0.05f, 50f)
     camera.getViewMatrix(viewMatrix, 0)
@@ -379,11 +383,10 @@ class ArcoreScannerView(context: Context, appContext: AppContext) :
 
     // Read from the anchors every frame, so the corners follow ARCore's corrections.
     val placed = cornerIds.mapNotNull { anchors[it]?.pose }.map { floatArrayOf(it.tx(), it.ty(), it.tz()) }
-    val lowest = floorHeightFrom(floors, camera)
     floorHeight = placed.firstOrNull()?.get(1) ?: lowest
     val aim = floorHeight?.let { aimAt(camera, it) }
     // The corners went on a table or bed found before the floor was.
-    val cornersRaised = placed.isNotEmpty() && lowest != null && placed[0][1] - lowest > MIN_FLOOR_DROP
+    val cornersRaised = placed.isNotEmpty() && lowest != null && placed[0][1] - lowest > RAISED_MARGIN
 
     drawFloors(floors)
     drawCorners(placed, aim)
@@ -524,8 +527,15 @@ class ArcoreScannerView(context: Context, appContext: AppContext) :
     val instances: MutableSet<ArcoreScannerView> = Collections.synchronizedSet(Collections.newSetFromMap(WeakHashMap()))
 
     private const val MAX_AIM_DISTANCE = 8f
-    /** How far below the phone, in metres, a plane must be to count as the floor. */
-    private const val MIN_FLOOR_DROP = 0.3f
+    /**
+     * How far below the phone, in metres, a plane must be to count as the floor. A phone held up to
+     * scan is about 1.1–1.6 m off the floor, while tables, desks, counters and most beds are 0.45–0.95
+     * m high, so they sit less than this below it. Then the first corner can't go on furniture just
+     * because ARCore found it before the floor.
+     */
+    private const val MIN_FLOOR_DROP = 0.9f
+    /** How far above the lowest floor plane, in metres, the corners must be to count as raised. */
+    private const val RAISED_MARGIN = 0.3f
     /** How far below the phone, in metres, a plane can be and still be this room's floor. */
     private const val MAX_FLOOR_DROP = 2.2f
     /** How far to the side of the phone, in metres, the floor's nearest edge can be. */

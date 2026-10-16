@@ -18,6 +18,7 @@ export interface TrackingEvent {
     | 'insufficient-features'
     | 'camera-unavailable'
     | 'bad-state';
+  /** Whether ARCore has found a plane that counts as the floor, rather than only furniture. */
   floorFound: boolean;
 }
 

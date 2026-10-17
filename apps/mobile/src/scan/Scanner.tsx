@@ -341,7 +341,7 @@ export function Scanner() {
         aimMode={marking ? 'walls' : 'floor'}
         wallRooms={wallRooms}
         openings={openingRects}
-        pendingCorner={pending}
+        pendingCorner={pending && { ...pending, toFloor: openingKind !== 'window' }}
         onTrackingChange={(event) => {
           setTracking(event.nativeEvent);
           if (event.nativeEvent.state === 'tracking') setError(null);

@@ -34,4 +34,7 @@ class WallPointRecord : Record {
   @Field val along: Double = 0.0
 
   @Field val height: Double = 0.0
+
+  /** For the corner of a door or doorway being marked: draw it reaching the floor. */
+  @Field val toFloor: Boolean = false
 }

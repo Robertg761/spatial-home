@@ -553,7 +553,8 @@ class ArcoreScannerView(context: Context, appContext: AppContext) :
       if (hit != null && hit.room == pending.room && hit.wall == pending.wall) {
         overlay.draw(
           GLES20.GL_LINE_LOOP,
-          wallRect(pendingRoom, pending.wall, along, hit.along, height, hit.height),
+          // A door or doorway is marked by its top corners and reaches the floor, as it will be saved.
+          wallRect(pendingRoom, pending.wall, along, hit.along, if (pending.toFloor) 0f else minOf(height, hit.height), maxOf(height, hit.height)),
           viewProjection,
           PREVIEW_COLOR
         )

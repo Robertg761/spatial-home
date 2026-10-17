@@ -98,8 +98,11 @@ export interface ArcoreScannerViewProps extends ViewProps {
   wallRooms?: WallRoom[];
   /** Doors and windows marked so far, drawn on their walls. */
   openings?: WallRect[];
-  /** The first corner of a door or window being marked, drawn with the crosshair's corner. */
-  pendingCorner?: WallPoint | null;
+  /**
+   * The first corner of a door or window being marked, drawn with the crosshair's corner. With
+   * `toFloor`, as for a door marked by its top corners, the preview reaches down to the floor.
+   */
+  pendingCorner?: (WallPoint & { toFloor?: boolean }) | null;
   onTrackingChange?: (event: NativeSyntheticEvent<TrackingEvent>) => void;
   onAim?: (event: NativeSyntheticEvent<AimEvent>) => void;
   onError?: (event: NativeSyntheticEvent<ScannerError>) => void;

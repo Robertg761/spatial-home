@@ -20,7 +20,8 @@
     "test:watch": "vitest",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "ha:check": "node --env-file-if-exists=.env scripts/ha-check.ts"
+    "ha:check": "node --env-file-if-exists=.env scripts/ha-check.ts",
+    "ha:sim": "node --env-file-if-exists=.env scripts/ha-check.ts --simulate --watch"
   },
   "overrides": {
     "react-native-gesture-handler": "~2.32.0",

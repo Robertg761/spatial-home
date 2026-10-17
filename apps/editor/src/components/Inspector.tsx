@@ -10,7 +10,9 @@ import {
 } from '@spatial-home/home-model';
 import { useEffect, useState, type Dispatch, type ReactNode } from 'react';
 import {
+  addMissingFloor,
   deleteItem,
+  missingFloors,
   roomsOnFloor,
   updateOpening,
   updateRoom,
@@ -73,20 +75,19 @@ function HomeInspector({
           edit({ ...layout, site: { ...layout.site, northBearing: northBearing % 360 } })
         }
       />
-      {layout.floors.length > 1 && (
-        <Field label="Floor">
-          <select
-            value={state.floorId}
-            onChange={(event) => dispatch({ type: 'set-floor', floorId: event.target.value })}
-          >
-            {layout.floors.map((floor) => (
-              <option key={floor.id} value={floor.id}>
-                {floor.name}
-              </option>
-            ))}
-          </select>
-        </Field>
-      )}
+      <FloorField
+        layout={layout}
+        value={state.floorId}
+        missing={missingFloors(layout)}
+        missingHint={`No floor has the id "${state.floorId}", though rooms are on it. Add it, or select a room to move it to another floor.`}
+        onChange={(floorId) => dispatch({ type: 'set-floor', floorId })}
+        onAdd={() => {
+          const { layout: next, id } = addMissingFloor(layout, state.floorId);
+          edit(next);
+          // The floor keeps its id unless another item has it, when the rooms move onto a new one.
+          dispatch({ type: 'set-floor', floorId: id });
+        }}
+      />
       <p className="muted">
         {layout.rooms.length} {layout.rooms.length === 1 ? 'room' : 'rooms'},{' '}
         {layout.openings.length} {layout.openings.length === 1 ? 'opening' : 'openings'}. Select a
@@ -116,6 +117,14 @@ function RoomInspector({
         value={room.name}
         required
         onCommit={(name) => edit(updateRoom(layout, room.id, { name }))}
+      />
+      <FloorField
+        layout={layout}
+        value={room.floorId}
+        missing={layout.floors.some((floor) => floor.id === room.floorId) ? [] : [room.floorId]}
+        missingHint={`No floor has the id "${room.floorId}". Move the room to another floor, or add this one.`}
+        onChange={(floorId) => edit(updateRoom(layout, room.id, { floorId }))}
+        onAdd={() => edit(addMissingFloor(layout, room.floorId).layout)}
       />
       <NumberField
         label="Ceiling height"
@@ -180,6 +189,7 @@ function OpeningInspector({
   const others = room
     ? roomsOnFloor(layout, room.floorId).filter((other) => other.id !== room.id)
     : [];
+  const destination = layout.rooms.find((candidate) => candidate.id === opening.connects);
   const facing = wall ? openingFacing(layout, opening) : null;
   const change = (patch: Parameters<typeof updateOpening>[2]) =>
     edit(updateOpening(layout, opening.id, patch));
@@ -211,7 +221,11 @@ function OpeningInspector({
           ))}
           {opening.connects !== OUTSIDE &&
             !others.some((other) => other.id === opening.connects) && (
-              <option value={opening.connects}>{opening.connects} (missing)</option>
+              <option value={opening.connects}>
+                {destination
+                  ? `${destination.name} (on another floor)`
+                  : `${opening.connects} (missing)`}
+              </option>
             )}
         </select>
       </Field>
@@ -282,6 +296,54 @@ function OpeningInspector({
         }
       />
     </section>
+  );
+}
+
+/**
+ * A choice of floor, shown when there is one to make or the chosen floor is missing. Floors that
+ * rooms are on but the layout doesn't have are listed after its own, with a button to add the
+ * chosen one.
+ */
+function FloorField({
+  layout,
+  value,
+  missing,
+  missingHint,
+  onChange,
+  onAdd,
+}: {
+  layout: HomeLayout;
+  value: string;
+  missing: string[];
+  /** Shown when the chosen floor is missing. */
+  missingHint: string;
+  onChange: (floorId: string) => void;
+  onAdd: () => void;
+}) {
+  const isMissing = missing.includes(value);
+  if (layout.floors.length + missing.length < 2 && !isMissing) return null;
+  return (
+    <>
+      <Field label="Floor" hint={isMissing ? missingHint : undefined}>
+        <select value={value} onChange={(event) => onChange(event.target.value)}>
+          {layout.floors.map((floor) => (
+            <option key={floor.id} value={floor.id}>
+              {floor.name}
+            </option>
+          ))}
+          {missing.map((id) => (
+            <option key={id} value={id}>
+              {id} (missing)
+            </option>
+          ))}
+        </select>
+      </Field>
+      {isMissing && (
+        <button type="button" className="fix" onClick={onAdd}>
+          Add the missing floor
+        </button>
+      )}
+    </>
   );
 }
 

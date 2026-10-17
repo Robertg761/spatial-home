@@ -16,6 +16,8 @@ npm run editor   # from the repository root; opens http://localhost:5173
 
 Undo and redo with Ctrl+Z and Ctrl+Shift+Z (⌘ on a Mac), and delete the selection with Delete or Backspace. **Checks** lists what the layout's validation found; click an item to select the room or opening it's about.
 
+**Floors.** Switch floors with **Floor** in the side panel when nothing is selected, and move a room to another floor from its own **Floor**. A file can put rooms on a floor it doesn't have: the editor still shows them, on that floor marked *missing*, so you can move them to another floor or add the missing floor with one click.
+
 **Saving.** The layout is kept in this browser as you work, so it survives a reload. It never leaves the device. **Save** downloads it as `home-layout.json`, and **Open…** loads one, even if it has problems to fix. **Sample** loads a five-room flat.
 
 ## Code

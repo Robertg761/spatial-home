@@ -1,0 +1,542 @@
+{
+  "name": "Demo home",
+  "floors": [
+    {
+      "floor_id": "ground_floor",
+      "name": "Ground floor",
+      "level": 0
+    }
+  ],
+  "areas": [
+    {
+      "area_id": "living_room",
+      "name": "Living room",
+      "floor_id": "ground_floor"
+    },
+    {
+      "area_id": "kitchen",
+      "name": "Kitchen",
+      "floor_id": "ground_floor"
+    },
+    {
+      "area_id": "hallway",
+      "name": "Hallway",
+      "floor_id": "ground_floor"
+    },
+    {
+      "area_id": "bathroom",
+      "name": "Bathroom",
+      "floor_id": "ground_floor"
+    },
+    {
+      "area_id": "bedroom",
+      "name": "Bedroom",
+      "floor_id": "ground_floor"
+    }
+  ],
+  "devices": [
+    {
+      "id": "living_room_ceiling",
+      "name": "Living room ceiling light",
+      "area_id": "living_room",
+      "manufacturer": "Signify",
+      "model": "Hue White and Color Ambiance"
+    },
+    {
+      "id": "reading_lamp",
+      "name": "Reading lamp",
+      "area_id": "living_room",
+      "manufacturer": "Signify",
+      "model": "Hue Go"
+    },
+    {
+      "id": "tv_plug",
+      "name": "TV smart plug",
+      "area_id": "living_room",
+      "manufacturer": "TP-Link",
+      "model": "Tapo P110"
+    },
+    {
+      "id": "living_room_climate",
+      "name": "Living room thermostat",
+      "area_id": "living_room",
+      "manufacturer": "Netatmo",
+      "model": "Smart Thermostat"
+    },
+    {
+      "id": "living_room_blinds",
+      "name": "Living room blinds",
+      "area_id": "living_room",
+      "manufacturer": "IKEA",
+      "model": "FYRTUR"
+    },
+    {
+      "id": "living_room_climate_sensor",
+      "name": "Living room climate sensor",
+      "area_id": "living_room",
+      "manufacturer": "Aqara",
+      "model": "WSDCGQ11LM"
+    },
+    {
+      "id": "living_room_window",
+      "name": "Living room window sensor",
+      "area_id": "living_room",
+      "manufacturer": "Aqara",
+      "model": "MCCGQ11LM"
+    },
+    {
+      "id": "kitchen_counter_light",
+      "name": "Kitchen counter light",
+      "area_id": "kitchen",
+      "manufacturer": "IKEA",
+      "model": "TRADFRI driver"
+    },
+    {
+      "id": "coffee_plug",
+      "name": "Coffee machine plug",
+      "area_id": "kitchen",
+      "manufacturer": "TP-Link",
+      "model": "Tapo P110"
+    },
+    {
+      "id": "kitchen_window",
+      "name": "Kitchen window sensor",
+      "area_id": "kitchen",
+      "manufacturer": "Aqara",
+      "model": "MCCGQ11LM"
+    },
+    {
+      "id": "fridge_door",
+      "name": "Fridge door sensor",
+      "area_id": "kitchen",
+      "manufacturer": "Aqara",
+      "model": "MCCGQ11LM"
+    },
+    {
+      "id": "kitchen_climate_sensor",
+      "name": "Kitchen climate sensor",
+      "area_id": "kitchen",
+      "manufacturer": "Aqara",
+      "model": "WSDCGQ11LM"
+    },
+    {
+      "id": "hallway_motion",
+      "name": "Hallway motion sensor",
+      "area_id": "hallway",
+      "manufacturer": "Aqara",
+      "model": "RTCGQ11LM"
+    },
+    {
+      "id": "front_door",
+      "name": "Front door sensor",
+      "area_id": "hallway",
+      "manufacturer": "Aqara",
+      "model": "MCCGQ11LM"
+    },
+    {
+      "id": "hallway_light",
+      "name": "Hallway light",
+      "area_id": "hallway",
+      "manufacturer": "Signify",
+      "model": "Hue White"
+    },
+    {
+      "id": "bathroom_light",
+      "name": "Bathroom light",
+      "area_id": "bathroom",
+      "manufacturer": "Signify",
+      "model": "Hue White"
+    },
+    {
+      "id": "bathroom_fan",
+      "name": "Bathroom fan plug",
+      "area_id": "bathroom",
+      "manufacturer": "TP-Link",
+      "model": "Tapo P100"
+    },
+    {
+      "id": "bathroom_climate_sensor",
+      "name": "Bathroom climate sensor",
+      "area_id": "bathroom",
+      "manufacturer": "Aqara",
+      "model": "WSDCGQ11LM"
+    },
+    {
+      "id": "bedroom_presence",
+      "name": "Bedroom presence sensor",
+      "area_id": "bedroom",
+      "manufacturer": "Aqara",
+      "model": "FP2"
+    },
+    {
+      "id": "bedside_lamp",
+      "name": "Bedside lamp",
+      "area_id": "bedroom",
+      "manufacturer": "Signify",
+      "model": "Hue Iris"
+    },
+    {
+      "id": "bedroom_blinds",
+      "name": "Bedroom blinds",
+      "area_id": "bedroom",
+      "manufacturer": "IKEA",
+      "model": "KADRILJ"
+    },
+    {
+      "id": "bedroom_climate_sensor",
+      "name": "Bedroom climate sensor",
+      "area_id": "bedroom",
+      "manufacturer": "Aqara",
+      "model": "WSDCGQ11LM"
+    },
+    {
+      "id": "garage_door",
+      "name": "Garage door opener",
+      "area_id": null,
+      "manufacturer": "Shelly",
+      "model": "Plus 1"
+    }
+  ],
+  "entities": [
+    {
+      "entity_id": "light.living_room_ceiling",
+      "name": "Living room ceiling light",
+      "device_id": "living_room_ceiling",
+      "state": "on",
+      "attributes": {
+        "supported_color_modes": ["color_temp", "hs"],
+        "brightness": 200,
+        "color_temp_kelvin": 3200,
+        "color_mode": "color_temp"
+      }
+    },
+    {
+      "entity_id": "light.reading_lamp",
+      "name": "Reading lamp",
+      "device_id": "reading_lamp",
+      "state": "off",
+      "attributes": {
+        "supported_color_modes": ["color_temp", "hs"],
+        "brightness": 140,
+        "hs_color": [30, 60],
+        "color_mode": "hs"
+      }
+    },
+    {
+      "entity_id": "switch.tv_plug",
+      "name": "TV plug",
+      "device_id": "tv_plug",
+      "state": "off",
+      "attributes": {
+        "device_class": "outlet"
+      }
+    },
+    {
+      "entity_id": "climate.living_room",
+      "name": "Living room thermostat",
+      "device_id": "living_room_climate",
+      "state": "heat",
+      "attributes": {
+        "hvac_modes": ["off", "heat", "cool", "auto"],
+        "temperature": 21.5,
+        "current_temperature": 19.8,
+        "min_temp": 10,
+        "max_temp": 30
+      },
+      "simulate": {
+        "kind": "thermostat",
+        "ambient": 18.5,
+        "ratePerMinute": 0.6
+      }
+    },
+    {
+      "entity_id": "cover.living_room_blinds",
+      "name": "Living room blinds",
+      "device_id": "living_room_blinds",
+      "state": "open",
+      "attributes": {
+        "device_class": "blind",
+        "current_position": 100
+      },
+      "simulate": {
+        "kind": "cover",
+        "secondsToTravel": 25
+      }
+    },
+    {
+      "entity_id": "sensor.living_room_temperature",
+      "name": "Living room temperature",
+      "device_id": "living_room_climate_sensor",
+      "state": "20.4",
+      "attributes": {
+        "device_class": "temperature",
+        "unit_of_measurement": "°C",
+        "state_class": "measurement"
+      },
+      "simulate": {
+        "kind": "random-walk",
+        "base": 20.5,
+        "min": 14,
+        "max": 30,
+        "step": 0.15
+      }
+    },
+    {
+      "entity_id": "sensor.living_room_humidity",
+      "name": "Living room humidity",
+      "device_id": "living_room_climate_sensor",
+      "state": "46",
+      "attributes": {
+        "device_class": "humidity",
+        "unit_of_measurement": "%",
+        "state_class": "measurement"
+      },
+      "simulate": {
+        "kind": "random-walk",
+        "base": 45,
+        "min": 30,
+        "max": 85,
+        "step": 0.8,
+        "decimals": 0
+      }
+    },
+    {
+      "entity_id": "binary_sensor.living_room_window",
+      "name": "Living room window",
+      "device_id": "living_room_window",
+      "state": "off",
+      "attributes": {
+        "device_class": "window"
+      },
+      "simulate": {
+        "kind": "flip",
+        "meanOnSeconds": 600,
+        "meanOffSeconds": 3600
+      }
+    },
+    {
+      "entity_id": "light.kitchen_counter",
+      "name": "Kitchen counter light",
+      "device_id": "kitchen_counter_light",
+      "state": "on",
+      "attributes": {
+        "supported_color_modes": ["brightness"],
+        "brightness": 255
+      }
+    },
+    {
+      "entity_id": "switch.coffee_machine",
+      "name": "Coffee machine",
+      "device_id": "coffee_plug",
+      "state": "off",
+      "attributes": {
+        "device_class": "outlet"
+      }
+    },
+    {
+      "entity_id": "binary_sensor.kitchen_window",
+      "name": "Kitchen window",
+      "device_id": "kitchen_window",
+      "state": "off",
+      "attributes": {
+        "device_class": "window"
+      },
+      "simulate": {
+        "kind": "flip",
+        "meanOnSeconds": 900,
+        "meanOffSeconds": 5400
+      }
+    },
+    {
+      "entity_id": "binary_sensor.fridge_door",
+      "name": "Fridge door",
+      "device_id": "fridge_door",
+      "state": "off",
+      "attributes": {
+        "device_class": "door"
+      },
+      "simulate": {
+        "kind": "flip",
+        "meanOnSeconds": 20,
+        "meanOffSeconds": 900
+      }
+    },
+    {
+      "entity_id": "sensor.kitchen_temperature",
+      "name": "Kitchen temperature",
+      "device_id": "kitchen_climate_sensor",
+      "state": "21.2",
+      "attributes": {
+        "device_class": "temperature",
+        "unit_of_measurement": "°C",
+        "state_class": "measurement"
+      },
+      "simulate": {
+        "kind": "random-walk",
+        "base": 21.5,
+        "min": 14,
+        "max": 30,
+        "step": 0.15
+      }
+    },
+    {
+      "entity_id": "binary_sensor.hallway_motion",
+      "name": "Hallway motion",
+      "device_id": "hallway_motion",
+      "state": "off",
+      "attributes": {
+        "device_class": "motion"
+      },
+      "simulate": {
+        "kind": "flip",
+        "meanOnSeconds": 25,
+        "meanOffSeconds": 240
+      }
+    },
+    {
+      "entity_id": "sensor.hallway_motion_battery",
+      "name": "Hallway motion battery",
+      "device_id": "hallway_motion",
+      "state": "87",
+      "attributes": {
+        "device_class": "battery",
+        "unit_of_measurement": "%",
+        "state_class": "measurement"
+      }
+    },
+    {
+      "entity_id": "binary_sensor.front_door",
+      "name": "Front door",
+      "device_id": "front_door",
+      "state": "off",
+      "attributes": {
+        "device_class": "door"
+      },
+      "simulate": {
+        "kind": "flip",
+        "meanOnSeconds": 30,
+        "meanOffSeconds": 1800
+      }
+    },
+    {
+      "entity_id": "light.hallway",
+      "name": "Hallway light",
+      "device_id": "hallway_light",
+      "state": "off",
+      "attributes": {
+        "supported_color_modes": ["brightness"],
+        "brightness": 180
+      }
+    },
+    {
+      "entity_id": "light.bathroom",
+      "name": "Bathroom light",
+      "device_id": "bathroom_light",
+      "state": "off",
+      "attributes": {
+        "supported_color_modes": ["brightness"],
+        "brightness": 255
+      }
+    },
+    {
+      "entity_id": "switch.bathroom_fan",
+      "name": "Bathroom fan",
+      "device_id": "bathroom_fan",
+      "state": "off",
+      "attributes": {
+        "device_class": "outlet"
+      }
+    },
+    {
+      "entity_id": "sensor.bathroom_humidity",
+      "name": "Bathroom humidity",
+      "device_id": "bathroom_climate_sensor",
+      "state": "58",
+      "attributes": {
+        "device_class": "humidity",
+        "unit_of_measurement": "%",
+        "state_class": "measurement"
+      },
+      "simulate": {
+        "kind": "random-walk",
+        "base": 60,
+        "min": 40,
+        "max": 95,
+        "step": 1.5,
+        "decimals": 0
+      }
+    },
+    {
+      "entity_id": "binary_sensor.bedroom_presence",
+      "name": "Bedroom presence",
+      "device_id": "bedroom_presence",
+      "state": "on",
+      "attributes": {
+        "device_class": "occupancy"
+      },
+      "simulate": {
+        "kind": "flip",
+        "meanOnSeconds": 1800,
+        "meanOffSeconds": 900
+      }
+    },
+    {
+      "entity_id": "light.bedside_lamp",
+      "name": "Bedside lamp",
+      "device_id": "bedside_lamp",
+      "state": "on",
+      "attributes": {
+        "supported_color_modes": ["color_temp", "hs"],
+        "brightness": 90,
+        "hs_color": [28, 75],
+        "color_mode": "hs"
+      }
+    },
+    {
+      "entity_id": "cover.bedroom_blinds",
+      "name": "Bedroom blinds",
+      "device_id": "bedroom_blinds",
+      "state": "closed",
+      "attributes": {
+        "device_class": "blind",
+        "current_position": 0
+      },
+      "simulate": {
+        "kind": "cover",
+        "secondsToTravel": 18
+      }
+    },
+    {
+      "entity_id": "sensor.bedroom_temperature",
+      "name": "Bedroom temperature",
+      "device_id": "bedroom_climate_sensor",
+      "state": "19.6",
+      "attributes": {
+        "device_class": "temperature",
+        "unit_of_measurement": "°C",
+        "state_class": "measurement"
+      },
+      "simulate": {
+        "kind": "random-walk",
+        "base": 19.5,
+        "min": 14,
+        "max": 30,
+        "step": 0.15
+      }
+    },
+    {
+      "entity_id": "cover.garage_door",
+      "name": "Garage door",
+      "device_id": "garage_door",
+      "state": "closed",
+      "attributes": {
+        "device_class": "garage",
+        "current_position": 0
+      },
+      "simulate": {
+        "kind": "cover",
+        "secondsToTravel": 12
+      }
+    }
+  ]
+}

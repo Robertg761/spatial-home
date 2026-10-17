@@ -165,6 +165,59 @@ export function addRoom(
   };
 }
 
+/**
+ * Floors that rooms are on but the layout doesn't have, in the order the rooms come. A file can name
+ * one by mistake; the editor shows its rooms so they can be moved, or the floor added.
+ */
+export function missingFloors(layout: HomeLayout): string[] {
+  const floors = new Set(layout.floors.map((floor) => floor.id));
+  return [...new Set(layout.rooms.map((room) => room.floorId))].filter((id) => !floors.has(id));
+}
+
+/**
+ * Adds a floor that rooms are on but the layout doesn't have, above the highest floor by the height
+ * of its tallest room. It keeps the id the rooms refer to, unless another item already has that id,
+ * when it gets a new one and the rooms move onto it.
+ */
+export function addMissingFloor(
+  layout: HomeLayout,
+  missingId: string
+): { layout: HomeLayout; id: string } {
+  const id = uniqueId(layout, missingId);
+  const top = layout.floors.reduce<Floor | undefined>(
+    (highest, floor) => (!highest || floor.level > highest.level ? floor : highest),
+    undefined
+  );
+  const height = top
+    ? Math.max(...roomsOnFloor(layout, top.id).map((room) => room.ceilingHeight))
+    : 0;
+  const floor: Floor = {
+    id,
+    name: floorName(missingId),
+    level: top ? top.level + 1 : 0,
+    elevation: top ? roundTo(top.elevation + (height > 0 ? height : DEFAULT_CEILING_HEIGHT)) : 0,
+  };
+  return {
+    layout: {
+      ...layout,
+      floors: [...layout.floors, floor],
+      rooms:
+        id === missingId
+          ? layout.rooms
+          : layout.rooms.map((room) =>
+              room.floorId === missingId ? { ...room, floorId: id } : room
+            ),
+    },
+    id,
+  };
+}
+
+/** A name made from a floor's id, such as "First floor" from first-floor. */
+function floorName(id: string): string {
+  const words = id.replace(/[-_.:]+/g, ' ').trim();
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
 function groundFloor(layout: HomeLayout): Floor {
   const floor = createEmptyLayout().floors[0]!;
   return { ...floor, id: uniqueId(layout, floor.id) };
@@ -280,6 +333,10 @@ function behind(layout: HomeLayout, opening: Opening): string | undefined {
     : undefined;
 }
 
+/**
+ * Changes a room. A room moved to another floor takes its openings, fixtures and devices along, and
+ * its openings, and those of rooms it leaves or joins, lead to whatever is now behind them.
+ */
 export function updateRoom(
   layout: HomeLayout,
   roomId: string,

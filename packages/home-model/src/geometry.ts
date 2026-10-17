@@ -3,6 +3,12 @@ import { OUTSIDE, type HomeLayout, type Opening, type Point2, type Room } from '
 /** Lengths below this many metres count as zero, absorbing floating-point error. */
 export const EPSILON = 1e-6;
 
+/**
+ * The thickest wall looked across, in metres. A scanned room's walls are its inner surfaces, so the
+ * room next door starts up to a wall's thickness away.
+ */
+export const MAX_WALL_THICKNESS = 0.45;
+
 /** Area of a polygon; positive when its corners run anticlockwise on the plan. */
 export function signedArea(outline: readonly Point2[]): number {
   let twiceArea = 0;
@@ -176,7 +182,7 @@ export function roomBehindWall(
   roomId: string,
   wallIndex: number,
   offset: number,
-  maxThickness = 0.45
+  maxThickness = MAX_WALL_THICKNESS
 ): string {
   const room = layout.rooms.find((candidate) => candidate.id === roomId);
   const wall = room ? roomWalls(room)[wallIndex] : undefined;

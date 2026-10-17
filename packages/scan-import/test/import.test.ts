@@ -208,6 +208,23 @@ describe('several rooms in one session', () => {
     ]);
   });
 
+  test('keeps both sightings of a door that disagree in width, and the layout warns', () => {
+    // Too different to be sure they are one door, so both are kept for someone to check.
+    const scan = twoRooms();
+    scan.rooms[1]!.openings = [
+      { kind: 'door', center: toWorld([4.15, 2.02], 1.03, NORTH), width: 1.3, height: 2.05 },
+    ];
+    const { layout, validation } = imported(importScan(scan));
+    expect(layout.openings.map((opening) => [opening.wall.roomId, opening.connects])).toEqual([
+      ['bedroom', 'hallway'],
+      ['hallway', 'bedroom'],
+    ]);
+    expect(validation.ok).toBe(true);
+    expect(validation.warnings.map(({ code, path }) => ({ code, path }))).toEqual([
+      { code: 'opening-overlap', path: ['openings', 1, 'offset'] },
+    ]);
+  });
+
   test('takes a doorway and a door seen from either side for the same opening', () => {
     // The hallway side didn't see the door leaf, so it reports a doorway.
     const scan = twoRooms();

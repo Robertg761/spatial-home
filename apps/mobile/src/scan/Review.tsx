@@ -6,6 +6,7 @@ import type { ImportResult } from '@spatial-home/scan-import';
 import { Alert, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { buildScan, floorArea, type CapturedRoom } from './guided.ts';
+import { OPENING_NAMES, type MarkedOpening } from './openings.ts';
 import { shareJsonFile } from './share.ts';
 import { Button, uiStyles } from './ui.tsx';
 
@@ -47,6 +48,7 @@ export function Review({
           <Text style={styles.roomDetail}>
             {floorArea(room.corners).toFixed(1)} m² · {room.corners.length} walls ·{' '}
             {room.ceilingHeight.toFixed(2)} m ceiling
+            {openingSummary(room.openings ?? [])}
           </Text>
         </View>
       ))}
@@ -99,3 +101,14 @@ const styles = StyleSheet.create({
   note: { fontSize: 14, color: '#713f12' },
   actions: { gap: 8 },
 });
+
+/** Such as " · 1 door, 2 windows", or nothing when none were marked. */
+function openingSummary(openings: MarkedOpening[]): string {
+  const counts = (['door', 'opening', 'window'] as const)
+    .map((kind) => {
+      const count = openings.filter((opening) => opening.kind === kind).length;
+      return count === 0 ? null : `${count} ${OPENING_NAMES[kind]}${count === 1 ? '' : 's'}`;
+    })
+    .filter((part) => part !== null);
+  return counts.length === 0 ? '' : ` · ${counts.join(', ')}`;
+}

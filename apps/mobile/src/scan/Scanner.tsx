@@ -1,8 +1,8 @@
 // The scanning screen: the camera view, the crosshair and hints over it, and the controls for
-// placing corners and closing rooms.
+// placing corners, closing rooms, and marking doors and windows on their walls.
 
 import { importScan, type ImportResult } from '@spatial-home/scan-import';
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   Linking,
@@ -19,6 +19,7 @@ import {
   type ArcoreScannerViewRef,
   type ScannerError,
   type TrackingEvent,
+  type WallPoint,
 } from '../../modules/arcore-scanner/index.ts';
 import {
   addCorner,
@@ -31,7 +32,8 @@ import {
   type CapturedRoom,
   type PlacedCorner,
 } from './guided.ts';
-import { formatDistance, parseCeilingHeight, scanHint } from './hints.ts';
+import { formatDistance, openingHint, parseCeilingHeight, scanHint } from './hints.ts';
+import { markOpening, OPENING_NAMES, type MarkedOpening, type OpeningKind } from './openings.ts';
 import { Review } from './Review.tsx';
 import { Button } from './ui.tsx';
 
@@ -46,9 +48,16 @@ interface ScannedRoom {
   ceilingHeight: number;
 }
 
-function capturedRoom(room: ScannedRoom): CapturedRoom {
-  return { ...room, corners: room.corners.map((corner) => corner.point) };
+/** The rooms with their corners as last read and the openings marked on their walls. */
+function capturedRooms(rooms: ScannedRoom[], openings: MarkedOpening[]): CapturedRoom[] {
+  return rooms.map((room, index) => ({
+    ...room,
+    corners: room.corners.map((corner) => corner.point),
+    openings: openings.filter((opening) => opening.room === index),
+  }));
 }
+
+const OPENING_KINDS: OpeningKind[] = ['door', 'window', 'opening'];
 
 /**
  * Asks for the camera again after it was taken away mid-scan, such as in Settings or when a one-time
@@ -72,6 +81,11 @@ export function Scanner() {
   const [aim, setAim] = useState<AimEvent | null>(null);
   const [error, setError] = useState<ScannerError | null>(null);
   const [result, setResult] = useState<ImportResult | null>(null);
+  // Doors and windows are marked on the walls of closed rooms, by room index into `rooms`.
+  const [mode, setMode] = useState<'rooms' | 'openings'>('rooms');
+  const [openingKind, setOpeningKind] = useState<OpeningKind>('door');
+  const [openings, setOpenings] = useState<MarkedOpening[]>([]);
+  const [pending, setPending] = useState<WallPoint | null>(null);
   const [busy, setBusy] = useState(false);
   // A ref as well as state: two taps in a row can both run before React re-renders with busy set.
   const busyRef = useRef(false);
@@ -224,13 +238,91 @@ export function Scanner() {
             return { ...room, corners: fresh };
           });
           setRooms(updated);
-          setResult(importScan(buildScan(updated.map(capturedRoom)), { name: 'My home' }));
+          setResult(importScan(buildScan(capturedRooms(updated, openings)), { name: 'My home' }));
         } catch (error) {
           Alert.alert('Couldn’t finish', error instanceof Error ? error.message : String(error));
         }
       }),
-    [exclusively, rooms]
+    [exclusively, rooms, openings]
   );
+
+  /** Marks a corner of a door or window where the crosshair meets a wall. The second makes it. */
+  const markCorner = useCallback(
+    () =>
+      exclusively(async () => {
+        if (!scanner.current) return;
+        try {
+          const hit = await scanner.current.wallAimAsync();
+          if (!hit) {
+            Alert.alert('Point at a wall', 'Aim the crosshair at a wall of a room you’ve scanned.');
+            return;
+          }
+          const point: WallPoint = {
+            room: hit.room,
+            wall: hit.wall,
+            along: hit.along,
+            height: hit.height,
+          };
+          if (!pending) {
+            setPending(point);
+            return;
+          }
+          const marked = markOpening(openingKind, pending, point, openings);
+          if (!marked.ok) {
+            Alert.alert(marked.title, marked.message);
+            return;
+          }
+          setOpenings([...openings, marked.opening]);
+          setPending(null);
+        } catch (error) {
+          Alert.alert(
+            'Couldn’t mark the corner',
+            error instanceof Error ? error.message : String(error)
+          );
+        }
+      }),
+    [exclusively, pending, openingKind, openings]
+  );
+
+  /** Takes back the first corner being marked, or else the last door or window. */
+  const undoOpening = useCallback(() => {
+    if (busyRef.current) return;
+    if (pending) setPending(null);
+    else setOpenings(openings.slice(0, -1));
+  }, [pending, openings]);
+
+  const wallRooms = useMemo(
+    () =>
+      rooms.map((room) => ({
+        cornerIds: room.corners.map((corner) => corner.id),
+        ceilingHeight: room.ceilingHeight,
+      })),
+    [rooms]
+  );
+  const openingRects = useMemo(
+    () =>
+      openings.map(({ room, wall, from, to, bottom, top }) => ({
+        room,
+        wall,
+        from,
+        to,
+        bottom,
+        top,
+      })),
+    [openings]
+  );
+  const marking = mode === 'openings';
+  // The size of the door or window being marked, from its first corner to the crosshair.
+  const markingSize =
+    pending && aim?.wall && aim.wall.room === pending.room && aim.wall.wall === pending.wall
+      ? {
+          width: Math.abs(aim.wall.along - pending.along),
+          height:
+            openingKind === 'window'
+              ? Math.abs(aim.wall.height - pending.height)
+              : Math.max(aim.wall.height, pending.height),
+        }
+      : null;
 
   const View3d = ArcoreScannerView!;
   const points = corners.map((corner) => corner.point);
@@ -246,6 +338,10 @@ export function Scanner() {
         // next room lines up with the ones already scanned.
         active
         cornerIds={corners.map((corner) => corner.id)}
+        aimMode={marking ? 'walls' : 'floor'}
+        wallRooms={wallRooms}
+        openings={openingRects}
+        pendingCorner={pending && { ...pending, toFloor: openingKind !== 'window' }}
         onTrackingChange={(event) => {
           setTracking(event.nativeEvent);
           if (event.nativeEvent.state === 'tracking') setError(null);
@@ -257,7 +353,7 @@ export function Scanner() {
       {result ? (
         <View style={styles.reviewSheet}>
           <Review
-            rooms={rooms.map(capturedRoom)}
+            rooms={capturedRooms(rooms, openings)}
             result={result}
             onScanMore={() => setResult(null)}
             onStartOver={() => {
@@ -266,21 +362,38 @@ export function Scanner() {
               setResult(null);
               setRooms([]);
               setCorners([]);
+              setOpenings([]);
+              setPending(null);
+              setMode('rooms');
             }}
           />
         </View>
       ) : (
         <>
           <View pointerEvents="none" style={styles.crosshairBox}>
-            <View style={[styles.crosshair, aim?.onFloor && styles.crosshairOnFloor]} />
-            {aim?.onFloor && aim.fromLast !== undefined ? (
+            <View
+              style={[
+                styles.crosshair,
+                (marking ? aim?.wall : aim?.onFloor) && styles.crosshairOnFloor,
+              ]}
+            />
+            {!marking && aim?.onFloor && aim.fromLast !== undefined ? (
               <Text style={styles.measure}>{formatDistance(aim.fromLast)}</Text>
+            ) : null}
+            {marking && markingSize ? (
+              <Text style={styles.measure}>
+                {formatDistance(markingSize.width)} × {formatDistance(markingSize.height)}
+              </Text>
             ) : null}
           </View>
 
           <View style={[styles.top, { paddingTop: 12 }]}>
             <Text style={styles.hint}>
-              {error ? error.message : scanHint(tracking, aim, points)}
+              {error
+                ? error.message
+                : marking
+                  ? openingHint(tracking, aim, openingKind, pending)
+                  : scanHint(tracking, aim, points)}
             </Text>
             {error?.code === 'camera-permission' ? (
               <Button label="Allow the camera" onPress={() => void allowCamera()} />
@@ -289,64 +402,113 @@ export function Scanner() {
               {rooms.length > 0
                 ? `${rooms.length} room${rooms.length === 1 ? '' : 's'} done · `
                 : ''}
-              {corners.length} corner{corners.length === 1 ? '' : 's'}
-              {walls.length > 0 ? ` · last wall ${formatDistance(walls.at(-1)!)}` : ''}
+              {marking
+                ? `Doors and windows marked: ${openings.length}`
+                : `${corners.length} corner${corners.length === 1 ? '' : 's'}`}
+              {!marking && walls.length > 0 ? ` · last wall ${formatDistance(walls.at(-1)!)}` : ''}
             </Text>
           </View>
 
-          <View style={[styles.panel, { paddingBottom: insets.bottom + 12 }]}>
-            <View style={styles.row}>
-              <TextInput
-                style={[styles.input, styles.grow]}
-                value={roomName}
-                onChangeText={setRoomName}
-                placeholder={placeholderName}
-                placeholderTextColor="#8a8f98"
-              />
-              <TextInput
-                style={[styles.input, styles.ceiling]}
-                value={ceiling}
-                onChangeText={setCeiling}
-                keyboardType="decimal-pad"
-                accessibilityLabel="Ceiling height in metres"
-              />
-              <Text style={styles.unit}>m high</Text>
-            </View>
-            <View style={styles.row}>
-              <Button
-                label="Undo"
-                kind="secondary"
-                disabled={busy || corners.length === 0}
-                onPress={() => void undoCorner()}
-              />
-              <Button
-                label="Add corner"
-                grow
-                disabled={busy || tracking?.state !== 'tracking'}
-                onPress={() => void placeCorner()}
-              />
-              {corners.length >= 3 ? (
+          {marking ? (
+            <View style={[styles.panel, { paddingBottom: insets.bottom + 12 }]}>
+              <View style={styles.row}>
+                {OPENING_KINDS.map((kind) => (
+                  <Button
+                    key={kind}
+                    label={OPENING_NAMES[kind].replace(/^./, (c) => c.toUpperCase())}
+                    kind={openingKind === kind ? 'primary' : 'secondary'}
+                    grow
+                    onPress={() => setOpeningKind(kind)}
+                  />
+                ))}
+              </View>
+              <View style={styles.row}>
                 <Button
-                  label="Close room"
+                  label="Undo"
                   kind="secondary"
+                  disabled={busy || (!pending && openings.length === 0)}
+                  onPress={undoOpening}
+                />
+                <Button
+                  label="Mark corner"
+                  grow
                   disabled={busy || tracking?.state !== 'tracking'}
-                  onPress={() => void closeCurrentRoom()}
+                  onPress={() => void markCorner()}
                 />
-              ) : (
                 <Button
-                  label="Done"
+                  label="Rooms"
                   kind="secondary"
-                  disabled={
-                    busy ||
-                    tracking?.state !== 'tracking' ||
-                    rooms.length === 0 ||
-                    corners.length > 0
-                  }
-                  onPress={() => void finish()}
+                  disabled={busy}
+                  onPress={() => {
+                    setPending(null);
+                    setMode('rooms');
+                  }}
                 />
-              )}
+              </View>
             </View>
-          </View>
+          ) : (
+            <View style={[styles.panel, { paddingBottom: insets.bottom + 12 }]}>
+              {rooms.length > 0 && corners.length === 0 ? (
+                <Button
+                  label="Mark doors and windows"
+                  kind="secondary"
+                  disabled={busy}
+                  onPress={() => setMode('openings')}
+                />
+              ) : null}
+              <View style={styles.row}>
+                <TextInput
+                  style={[styles.input, styles.grow]}
+                  value={roomName}
+                  onChangeText={setRoomName}
+                  placeholder={placeholderName}
+                  placeholderTextColor="#8a8f98"
+                />
+                <TextInput
+                  style={[styles.input, styles.ceiling]}
+                  value={ceiling}
+                  onChangeText={setCeiling}
+                  keyboardType="decimal-pad"
+                  accessibilityLabel="Ceiling height in metres"
+                />
+                <Text style={styles.unit}>m high</Text>
+              </View>
+              <View style={styles.row}>
+                <Button
+                  label="Undo"
+                  kind="secondary"
+                  disabled={busy || corners.length === 0}
+                  onPress={() => void undoCorner()}
+                />
+                <Button
+                  label="Add corner"
+                  grow
+                  disabled={busy || tracking?.state !== 'tracking'}
+                  onPress={() => void placeCorner()}
+                />
+                {corners.length >= 3 ? (
+                  <Button
+                    label="Close room"
+                    kind="secondary"
+                    disabled={busy || tracking?.state !== 'tracking'}
+                    onPress={() => void closeCurrentRoom()}
+                  />
+                ) : (
+                  <Button
+                    label="Done"
+                    kind="secondary"
+                    disabled={
+                      busy ||
+                      tracking?.state !== 'tracking' ||
+                      rooms.length === 0 ||
+                      corners.length > 0
+                    }
+                    onPress={() => void finish()}
+                  />
+                )}
+              </View>
+            </View>
+          )}
         </>
       )}
     </View>

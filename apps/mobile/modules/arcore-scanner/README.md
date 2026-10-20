@@ -24,7 +24,7 @@ ARCore is declared optional, so the app still installs on phones without it. The
 | `scannerIncluded` | Whether this build has the module. False on iPhone, on the web and in Expo Go. |
 | `getAvailabilityAsync()` | `supported`, `needs-install`, `needs-update`, `unsupported`, `checking` while ARCore is still finding out, or `unknown` when it couldn't find out, such as offline. |
 | `requestInstallAsync()` | Opens the Play Store to install or update ARCore. `installed`, `requested` (check again when the app comes back), `declined` or `unsupported`. |
-| `ArcoreScannerView` | The camera view. Props: `active`, and `cornerIds` for the current room's corners. Events: `onTrackingChange`, `onAim` and `onError`. Its ref has `anchorAimAsync()`, which anchors a corner where the crosshair meets the floor, and `getCornerPositionsAsync()` and `removeCornersAsync()` for the corners. |
+| `ArcoreScannerView` | The camera view. Props: `active`; `cornerIds` for the current room's corners; `aimMode`, `floor` or `walls`; `wallRooms` for the closed rooms; and `openings` and `pendingCorner` for the doors and windows marked on their walls. Events: `onTrackingChange`, `onAim` and `onError`. Its ref has `anchorAimAsync()`, which anchors a corner where the crosshair meets the floor; `getCornerPositionsAsync()` and `removeCornersAsync()` for the corners; and `wallAimAsync()`, which gives where the crosshair meets a wall. |
 
 Points are in ARCore's world frame: metres, y up, and the session's starting point as the origin. The room scan format uses the same frame.
 
@@ -32,17 +32,19 @@ Each corner is an ARCore anchor. ARCore keeps refining its map of the room while
 
 Every room in one scan has to come from one AR session, so they share that frame. The scan screen keeps the session running while it shows the result, because the person may walk to the next room before scanning it, and ARCore has to keep tracking on the way. Leaving the screen ends the session, and ARCore may not keep the same origin after the app has been in the background.
 
+Doors and windows are marked on the walls of rooms already closed. In `walls` mode, the crosshair aims at the walls of `wallRooms` instead of the floor. Each wall is a vertical rectangle on the line between two anchored corners, up to the ceiling height. A point on a wall is given as metres along it from its first corner and above the floor, rather than as a world position, so a door marked on a wall moves with the wall's anchors like the corners do.
+
 The camera permission is requested by the app, not the module.
 
 ## How it works
 
 - `ArcoreScannerView.kt` runs the ARCore session on a `GLSurfaceView`. Each frame it draws the camera, the floor planes found so far, the walls between the corners, and the crosshair's point on the floor.
 - The crosshair is a ray from the centre of the camera, intersected with the floor's height. The floor's height comes from the first corner once there is one. Before that, it comes from the lowest upward-facing plane of at least 0.25 m² that is 0.9–2.2 m below the phone and within 4 m of it to the side. The camera can't see below the floor, and tables and beds are always above it, so the lowest nearby plane is the floor once ARCore has found it. A phone held up to scan is 1.1–1.6 m off the floor and furniture is lower than 0.95 m, so the 0.9 m minimum keeps a table or bed that ARCore found first from being taken for the floor; until a plane qualifies, the screen keeps asking for the floor. The 2.2 m maximum and the 4 m reach keep a storey below, seen earlier in the session, from being taken for this room's floor. If corners still end up more than 0.3 m above a floor found later, the screen flags them and won't add to or close the room.
+- In `walls` mode, `WallGeometry.kt` intersects the same ray with each wall of the closed rooms and takes the nearest. A hit up to 10 cm past a wall's end, the floor or the ceiling counts and is moved onto the edge, so a door's corner can be marked where it meets the floor or a wall's end. The view draws the closed rooms as their walls, the marked doors and windows, and the one being marked.
 - `BackgroundRenderer.kt` draws the camera image, and `OverlayRenderer.kt` draws lines and points.
 - The session pauses when the app goes to the background and resumes when it comes back. If another app has the camera, when scanning starts or mid-scan, the view stops as for a pause and tries again every two seconds until the camera is free. Corner calls fail, rather than wait, while the camera isn't running.
 
 ## Not yet
 
-- Doors and windows, marked on the walls. This comes next.
 - Measuring the ceiling height with the phone. For now the person types it in.
 - Automatic walls from depth, on phones that support it.

@@ -38,6 +38,7 @@ export { parseLayoutJson, validateLayout } from './validate.ts';
 export type { LayoutIssue, ValidationResult } from './validate.ts';
 export {
   EPSILON,
+  MAX_WALL_THICKNESS,
   compassBearing,
   compassPoint,
   distance,

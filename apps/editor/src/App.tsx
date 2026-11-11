@@ -3,6 +3,7 @@ import {
   parseLayoutJson,
   validateLayout,
   type HomeLayout,
+  type Point2,
 } from '@spatial-home/home-model';
 import sample from '@spatial-home/home-model/examples/sample-flat.json';
 import {
@@ -14,12 +15,17 @@ import {
   useReducer,
   useRef,
   useState,
+  useSyncExternalStore,
 } from 'react';
 import { flushSync } from 'react-dom';
-import { Inspector } from './components/Inspector.tsx';
+import { Inspector, type HomeAssistantView } from './components/Inspector.tsx';
 import { IssuesPanel, selectionForIssue } from './components/IssuesPanel.tsx';
+import { Library } from './components/Library.tsx';
 import { PlanView, type Tool } from './components/PlanView.tsx';
 import { deleteItem, uniqueIds } from './editor/plan.ts';
+import { addFixture, placeDevice, type Placement } from './editor/things.ts';
+import { buildCatalog, deviceSpecFor } from './ha/catalog.ts';
+import { HomeAssistantLink } from './ha/link.ts';
 import { editorReducer, initialState, isPristine } from './editor/state.ts';
 import {
   createDraftSaver,
@@ -58,6 +64,61 @@ export function App() {
   const [drawing, setDrawing] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
   const [draftSaver] = useState(() => createDraftSaver());
+  const [placing, setPlacing] = useState<Placement | null>(null);
+
+  const [link] = useState(() => new HomeAssistantLink());
+  const ha = useSyncExternalStore(link.subscribe, link.getSnapshot);
+  useEffect(() => {
+    link.resume();
+    return () => link.dispose();
+  }, [link]);
+  // Names come from the registries, falling back to the states, which are there from the start.
+  const catalog = useMemo(
+    () => (ha.registries ? buildCatalog(ha.registries, (id) => link.entity(id)) : []),
+    [ha.registries, link]
+  );
+  const homeAssistant = useMemo<HomeAssistantView | null>(
+    () =>
+      ha.registries && ha.status !== 'off'
+        ? { registries: ha.registries, entity: (id) => link.entity(id) }
+        : null,
+    // statesVersion makes the inspector show live states as they change.
+    [ha.registries, ha.status, ha.statesVersion, link]
+  );
+
+  const place = (placement: Placement, point: Point2) => {
+    setPlacing(null);
+    if (placement.kind === 'fixture') {
+      const result = addFixture(state.layout, state.floorId, placement.preset, point);
+      if ('error' in result) setMessage(result.error);
+      else
+        dispatch({
+          type: 'edit',
+          layout: result.layout,
+          select: { kind: 'fixture', id: result.id },
+        });
+      return;
+    }
+    const item = catalog
+      .flatMap((group) => group.items)
+      .find((entry) => entry.key === placement.key);
+    if (!item) {
+      setMessage(`${placement.name} is no longer in Home Assistant.`);
+      return;
+    }
+    const result = placeDevice(
+      state.layout,
+      state.floorId,
+      deviceSpecFor(item, (id) => link.entity(id)),
+      point
+    );
+    if ('error' in result) {
+      setMessage(result.error);
+      return;
+    }
+    dispatch({ type: 'edit', layout: result.layout, select: { kind: 'device', id: result.id } });
+    if (result.moved) setMessage(`${item.name} was already placed, so it moved here.`);
+  };
 
   const validation = useMemo(() => validateLayout(state.layout), [state.layout]);
   const issues = useMemo(
@@ -122,6 +183,7 @@ export function App() {
   const load = (layout: HomeLayout, note = '') => {
     dispatch({ type: 'load', layout });
     setTool('select');
+    setPlacing(null);
     setFitRequest((n) => n + 1);
     setMessage(note);
   };
@@ -139,6 +201,8 @@ export function App() {
         dispatch({ type: 'redo' });
       } else if (mod) {
         return;
+      } else if (event.key === 'Escape' && placing) {
+        setPlacing(null);
       } else if (event.key === '3') {
         setView((current) => (current === 'plan' ? '3d' : 'plan'));
       } else if (
@@ -152,13 +216,26 @@ export function App() {
         dispatch({ type: 'select', selection: null });
       } else if (view === 'plan') {
         const match = TOOLS.find((entry) => entry.key === event.key.toUpperCase());
-        if (match) setTool(match.tool);
+        if (match) chooseTool(match.tool);
         else if (event.key === 'Escape') setTool('select');
       }
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [state.layout, state.selection, tool, view]);
+  }, [state.layout, state.selection, tool, placing, view]);
+
+  const chooseTool = (next: Tool) => {
+    setTool(next);
+    setPlacing(null);
+  };
+  // Things are placed on the plan, so picking one shows it.
+  const pick = (placement: Placement | null) => {
+    setPlacing(placement);
+    if (placement) {
+      setTool('select');
+      setView('plan');
+    }
+  };
 
   // Reading a file takes a moment, so ask about replacing the layout once it has been read, as it
   // is then, and only for the file chosen last.
@@ -296,10 +373,10 @@ export function App() {
           <button
             key={entry}
             type="button"
-            className={tool === entry && view === 'plan' ? 'active' : ''}
-            aria-pressed={tool === entry && view === 'plan'}
+            className={tool === entry && view === 'plan' && !placing ? 'active' : ''}
+            aria-pressed={tool === entry && view === 'plan' && !placing}
             disabled={view !== 'plan'}
-            onClick={() => setTool(entry)}
+            onClick={() => chooseTool(entry)}
             title={view === 'plan' ? `${label} (${key})` : 'Switch to the plan to draw'}
           >
             {label}
@@ -307,6 +384,25 @@ export function App() {
           </button>
         ))}
       </nav>
+
+      <Library
+        layout={state.layout}
+        link={link}
+        snapshot={ha}
+        catalog={catalog}
+        placing={placing}
+        selectedDeviceId={state.selection?.kind === 'device' ? state.selection.id : undefined}
+        onPick={pick}
+        onDragEnd={() => setPlacing(null)}
+        onSelectDevice={(id) => {
+          chooseTool('select');
+          dispatch({ type: 'select', selection: { kind: 'device', id } });
+        }}
+        onEdit={(layout, note) => {
+          dispatch({ type: 'edit', layout });
+          setMessage(note);
+        }}
+      />
 
       <main className="canvas">
         {view === 'plan' ? (
@@ -318,6 +414,8 @@ export function App() {
             onMessage={setMessage}
             fitRequest={fitRequest}
             onDrawing={setDrawing}
+            placing={placing}
+            onPlace={place}
           />
         ) : (
           <Suspense fallback={<div className="empty-state">Loading the 3D view…</div>}>
@@ -349,7 +447,7 @@ export function App() {
             </button>
           </div>
         )}
-        {isEmpty && view === 'plan' && tool === 'select' && (
+        {isEmpty && view === 'plan' && tool === 'select' && !placing && (
           <div className="empty-state">
             <p>
               Draw your first room with the Room tool (R), or open the sample flat to see how a
@@ -367,7 +465,7 @@ export function App() {
       </main>
 
       <aside className="sidebar">
-        <Inspector state={state} dispatch={dispatch} />
+        <Inspector state={state} dispatch={dispatch} homeAssistant={homeAssistant} />
         <IssuesPanel
           issues={issues}
           layout={state.layout}

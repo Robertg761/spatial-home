@@ -7,7 +7,7 @@ interface IssuesPanelProps {
   onSelect: (selection: Selection) => void;
 }
 
-/** Problems the layout's validation found, each linking to the room or opening it's about. */
+/** Problems the layout's validation found, each linking to the item it's about. */
 export function IssuesPanel({ issues, layout, onSelect }: IssuesPanelProps) {
   const errors = issues.filter((issue) => issue.severity === 'error').length;
   const warnings = issues.length - errors;
@@ -43,7 +43,7 @@ export function IssuesPanel({ issues, layout, onSelect }: IssuesPanelProps) {
   );
 }
 
-/** The room or opening an issue is about, from its path into the layout. */
+/** The item an issue is about, from its path into the layout. */
 export function selectionForIssue(layout: HomeLayout, issue: Pick<LayoutIssue, 'path'>): Selection {
   const [collection, index] = issue.path;
   if (typeof index !== 'number') return null;
@@ -54,6 +54,14 @@ export function selectionForIssue(layout: HomeLayout, issue: Pick<LayoutIssue, '
   if (collection === 'openings') {
     const opening = layout.openings[index];
     return opening ? { kind: 'opening', id: opening.id } : null;
+  }
+  if (collection === 'fixtures') {
+    const fixture = layout.fixtures[index];
+    return fixture ? { kind: 'fixture', id: fixture.id } : null;
+  }
+  if (collection === 'devices') {
+    const device = layout.devices[index];
+    return device ? { kind: 'device', id: device.id } : null;
   }
   return null;
 }

@@ -4,6 +4,9 @@ import {
   polygonArea,
   polygonCentroid,
   roomWalls,
+  type Coverage,
+  type Device,
+  type Fixture,
   type HomeLayout,
   type Opening,
   type Point2,
@@ -24,8 +27,21 @@ import {
   type WallHit,
 } from '../editor/plan.ts';
 import type { EditorAction, EditorState } from '../editor/state.ts';
+import {
+  THING_GRID_STEP,
+  fixtureCorners,
+  headingTowards,
+  isCone,
+  moveThing,
+  pointAt,
+  updateDevice,
+  updateFixture,
+  type Placement,
+} from '../editor/things.ts';
 
 export type Tool = 'select' | 'room' | OpeningKind;
+
+type Thing = { kind: 'fixture' | 'device'; id: string };
 
 interface View {
   /** Plan point at the centre of the view, in metres. */
@@ -38,7 +54,9 @@ interface View {
 type Drag =
   | { kind: 'pan'; pointerId: number; startClient: Point2; startView: View }
   | { kind: 'room'; pointerId: number; roomId: string; start: Point2; startLayout: HomeLayout }
-  | { kind: 'corner'; pointerId: number; roomId: string; index: number; startLayout: HomeLayout };
+  | { kind: 'corner'; pointerId: number; roomId: string; index: number; startLayout: HomeLayout }
+  | { kind: 'thing'; pointerId: number; item: Thing; offset: Point2; startLayout: HomeLayout }
+  | { kind: 'rotate'; pointerId: number; item: Thing; center: Point2; startLayout: HomeLayout };
 
 /** How close, in pixels, the cursor must be to a corner or wall to snap to it. */
 const SNAP_PIXELS = 12;
@@ -56,6 +74,9 @@ interface PlanViewProps {
   fitRequest: number;
   /** Told whether a room is being drawn, as its corners so far are kept only here. */
   onDrawing: (drawing: boolean) => void;
+  /** Furniture or a device picked in the side panel, placed where the plan is clicked or dropped on. */
+  placing: Placement | null;
+  onPlace: (placement: Placement, point: Point2) => void;
 }
 
 export function PlanView({
@@ -66,6 +87,8 @@ export function PlanView({
   onMessage,
   fitRequest,
   onDrawing,
+  placing,
+  onPlace,
 }: PlanViewProps) {
   const { layout, floorId, selection } = state;
   const svgRef = useRef<SVGSVGElement>(null);
@@ -79,6 +102,8 @@ export function PlanView({
   const rooms = roomsOnFloor(layout, floorId);
   const roomIds = new Set(rooms.map((room) => room.id));
   const openings = layout.openings.filter((opening) => roomIds.has(opening.wall.roomId));
+  const fixtures = layout.fixtures.filter((fixture) => roomIds.has(fixture.roomId));
+  const devices = layout.devices.filter((device) => roomIds.has(device.roomId));
   const snapDistance = SNAP_PIXELS / view.scale;
 
   useLayoutEffect(() => {
@@ -196,6 +221,11 @@ export function PlanView({
     }
     if (event.button !== 0) return;
 
+    if (placing) {
+      onPlace(placing, point);
+      return;
+    }
+
     if (tool === 'room') {
       const snapped = snapPoint(layout, floorId, point, snapDistance);
       const first = draft[0];
@@ -237,6 +267,31 @@ export function PlanView({
         pointerId: event.pointerId,
         roomId: id,
         index: Number(target.dataset.index),
+        startLayout: layout,
+      });
+    } else if (kind === 'rotate' && id) {
+      const item: Thing = { kind: target.dataset.thing === 'fixture' ? 'fixture' : 'device', id };
+      const thing = findThing(layout, item);
+      if (!thing) return;
+      dispatch({ type: 'gesture-start' });
+      startDrag(event, {
+        kind: 'rotate',
+        pointerId: event.pointerId,
+        item,
+        center: [thing.position[0], thing.position[1]],
+        startLayout: layout,
+      });
+    } else if ((kind === 'fixture' || kind === 'device') && id) {
+      const item: Thing = { kind, id };
+      const thing = findThing(layout, item);
+      if (!thing) return;
+      dispatch({ type: 'select', selection: item });
+      dispatch({ type: 'gesture-start' });
+      startDrag(event, {
+        kind: 'thing',
+        pointerId: event.pointerId,
+        item,
+        offset: [point[0] - thing.position[0], point[1] - thing.position[1]],
         startLayout: layout,
       });
     } else if (kind === 'opening' && id) {
@@ -284,6 +339,21 @@ export function PlanView({
         type: 'gesture-update',
         layout: moveRoom(current.startLayout, current.roomId, dx, dy),
       });
+    } else if (current.kind === 'thing') {
+      const target: Point2 = [point[0] - current.offset[0], point[1] - current.offset[1]];
+      dispatch({
+        type: 'gesture-update',
+        layout: moveThing(current.startLayout, current.item, target, floorId),
+      });
+    } else if (current.kind === 'rotate') {
+      const heading = headingTowards(current.center, point);
+      dispatch({
+        type: 'gesture-update',
+        layout:
+          current.item.kind === 'fixture'
+            ? updateFixture(current.startLayout, current.item.id, { rotation: heading })
+            : updateDevice(current.startLayout, current.item.id, { heading }),
+      });
     } else {
       // Snap to other rooms' corners, so the corner being dragged doesn't snap back to itself.
       const others = {
@@ -322,7 +392,23 @@ export function PlanView({
   const lastDraft = draft.at(-1);
 
   return (
-    <div className={`plan tool-${tool}${spaceHeld ? ' panning' : ''}`}>
+    <div
+      className={`plan tool-${placing ? 'place' : tool}${spaceHeld ? ' panning' : ''}`}
+      onDragOver={(event) => {
+        const svg = svgRef.current;
+        if (!placing || !svg) return;
+        event.preventDefault();
+        event.dataTransfer.dropEffect = 'copy';
+        setCursor(toPlan(svg, event.clientX, event.clientY));
+      }}
+      onDragLeave={() => setCursor(null)}
+      onDrop={(event) => {
+        const svg = svgRef.current;
+        if (!placing || !svg) return;
+        event.preventDefault();
+        onPlace(placing, toPlan(svg, event.clientX, event.clientY));
+      }}
+    >
       <svg
         ref={svgRef}
         viewBox={viewBox.join(' ')}
@@ -362,6 +448,33 @@ export function PlanView({
           );
         })}
 
+        <defs>
+          {rooms.map((room, index) => (
+            <clipPath key={room.id} id={`room-clip-${index}`}>
+              <polygon points={room.outline.map(([x, y]) => `${x},${-y}`).join(' ')} />
+            </clipPath>
+          ))}
+        </defs>
+
+        {devices.map((device) => (
+          <CoverageMark
+            key={device.id}
+            device={device}
+            clip={`room-clip-${rooms.findIndex((room) => room.id === device.roomId)}`}
+            selected={selection?.kind === 'device' && selection.id === device.id}
+          />
+        ))}
+
+        {fixtures.map((fixture) => (
+          <FixtureMark
+            key={fixture.id}
+            fixture={fixture}
+            px={px}
+            selected={selection?.kind === 'fixture' && selection.id === fixture.id}
+            flag={flagged.get(fixture.id)}
+          />
+        ))}
+
         {openings.map((opening) => (
           <OpeningMark
             key={opening.id}
@@ -372,6 +485,20 @@ export function PlanView({
             flag={flagged.get(opening.id)}
           />
         ))}
+
+        {devices.map((device) => (
+          <DeviceMark
+            key={device.id}
+            device={device}
+            px={px}
+            selected={selection?.kind === 'device' && selection.id === device.id}
+            flag={flagged.get(device.id)}
+          />
+        ))}
+
+        {tool === 'select' && !placing && selection && (
+          <RotateHandle layout={layout} selection={selection} roomIds={roomIds} px={px} />
+        )}
 
         {selection?.kind === 'room' &&
           roomIds.has(selection.id) &&
@@ -428,9 +555,15 @@ export function PlanView({
         {wallHit && isOpeningTool(tool) && (
           <OpeningPreview layout={layout} hit={wallHit} kind={tool} px={px} />
         )}
+
+        {placing && cursor && <PlacementGhost placing={placing} point={cursor} px={px} />}
       </svg>
 
-      <div className="plan-hint">{hintFor(tool, draft.length)}</div>
+      <div className="plan-hint">
+        {placing
+          ? `Click inside a room to place ${placing.kind === 'fixture' ? `the ${placing.preset.label.toLowerCase()}` : placing.name}, or drop it there. Esc cancels.`
+          : hintFor(tool, draft.length)}
+      </div>
       {cursor && (
         <div className="plan-cursor">
           {formatLength(cursor[0])}, {formatLength(cursor[1])}
@@ -481,6 +614,193 @@ function OpeningMark({
       <line className="opening-line" x1={a[0]} y1={-a[1]} x2={b[0]} y2={-b[1]} />
     </g>
   );
+}
+
+function FixtureMark({
+  fixture,
+  px,
+  selected,
+  flag,
+}: {
+  fixture: Fixture;
+  px: number;
+  selected: boolean;
+  flag: 'error' | 'warning' | undefined;
+}) {
+  const corners = fixtureCorners(fixture);
+  const [frontA, frontB] = corners as [Point2, Point2];
+  const fontSize = 11 * px;
+  // The name fits when it's narrower than the fixture, at roughly 0.6 em a character.
+  const fits =
+    fixture.name.length * fontSize * 0.6 < Math.max(fixture.size.width, fixture.size.depth);
+  return (
+    <g
+      data-kind="fixture"
+      data-id={fixture.id}
+      className={`fixture${selected ? ' selected' : ''}${flag ? ` flagged-${flag}` : ''}`}
+    >
+      <title>{fixture.name}</title>
+      <polygon points={corners.map(([x, y]) => `${x},${-y}`).join(' ')} />
+      <line
+        className="fixture-front"
+        x1={frontA[0]}
+        y1={-frontA[1]}
+        x2={frontB[0]}
+        y2={-frontB[1]}
+      />
+      {(fits || selected) && (
+        <text
+          className="fixture-label"
+          x={fixture.position[0]}
+          y={-fixture.position[1] + fontSize * 0.35}
+          fontSize={fontSize}
+          textAnchor="middle"
+        >
+          {fixture.name}
+        </text>
+      )}
+    </g>
+  );
+}
+
+/** What a device senses or lights, clipped to its room, as walls block it. */
+function CoverageMark({
+  device,
+  clip,
+  selected,
+}: {
+  device: Device;
+  clip: string;
+  selected: boolean;
+}) {
+  if (!device.coverage?.length) return null;
+  const origin: Point2 = [device.position[0], device.position[1]];
+  return (
+    <g className={`coverage${selected ? ' selected' : ''}`} clipPath={`url(#${clip})`}>
+      {device.coverage.map((coverage, index) => (
+        <CoverageShape
+          key={index}
+          origin={origin}
+          heading={device.heading ?? 0}
+          coverage={coverage}
+        />
+      ))}
+    </g>
+  );
+}
+
+function CoverageShape({
+  origin,
+  heading,
+  coverage,
+}: {
+  origin: Point2;
+  heading: number;
+  coverage: Coverage;
+}) {
+  const className = `coverage-${coverage.kind}`;
+  if (!isCone(coverage)) {
+    return <circle className={className} cx={origin[0]} cy={-origin[1]} r={coverage.range} />;
+  }
+  const half = (coverage.fieldOfView ?? 360) / 2;
+  const [x1, y1] = pointAt(origin, heading - half, coverage.range);
+  const [x2, y2] = pointAt(origin, heading + half, coverage.range);
+  const large = half * 2 > 180 ? 1 : 0;
+  // Plan headings turn clockwise, which on screen, with y flipped, is the sweep direction 1.
+  const path = `M ${origin[0]} ${-origin[1]} L ${x1} ${-y1} A ${coverage.range} ${coverage.range} 0 ${large} 1 ${x2} ${-y2} Z`;
+  return <path className={className} d={path} />;
+}
+
+function DeviceMark({
+  device,
+  px,
+  selected,
+  flag,
+}: {
+  device: Device;
+  px: number;
+  selected: boolean;
+  flag: 'error' | 'warning' | undefined;
+}) {
+  const [x, y] = device.position;
+  const kind = device.coverage?.[0]?.kind ?? 'other';
+  const radius = 7 * px;
+  const tip = device.heading !== undefined ? pointAt([x, y], device.heading, 13 * px) : null;
+  return (
+    <g
+      data-kind="device"
+      data-id={device.id}
+      className={`device device-${kind}${selected ? ' selected' : ''}${flag ? ` flagged-${flag}` : ''}`}
+    >
+      <title>{device.name}</title>
+      {tip && <line className="device-heading" x1={x} y1={-y} x2={tip[0]} y2={-tip[1]} />}
+      <circle cx={x} cy={-y} r={radius} />
+      {selected && (
+        <text className="device-label" x={x + radius * 1.6} y={-y + 4 * px} fontSize={12 * px}>
+          {device.name}
+        </text>
+      )}
+    </g>
+  );
+}
+
+/**
+ * A handle to turn the selected piece of furniture, or device with a heading, by dragging it around.
+ */
+function RotateHandle({
+  layout,
+  selection,
+  roomIds,
+  px,
+}: {
+  layout: HomeLayout;
+  selection: NonNullable<EditorState['selection']>;
+  roomIds: Set<string>;
+  px: number;
+}) {
+  if (selection.kind !== 'fixture' && selection.kind !== 'device') return null;
+  const thing = findThing(layout, { kind: selection.kind, id: selection.id });
+  if (!thing || !roomIds.has(thing.roomId)) return null;
+  const center: Point2 = [thing.position[0], thing.position[1]];
+  let handle: Point2;
+  if ('rotation' in thing) {
+    handle = pointAt(center, thing.rotation, thing.size.depth / 2 + 22 * px);
+  } else if (thing.heading !== undefined) {
+    handle = pointAt(center, thing.heading, 34 * px);
+  } else {
+    return null;
+  }
+  return (
+    <g className="rotate">
+      <line x1={center[0]} y1={-center[1]} x2={handle[0]} y2={-handle[1]} />
+      <circle
+        data-kind="rotate"
+        data-thing={selection.kind}
+        data-id={selection.id}
+        className="rotate-handle"
+        cx={handle[0]}
+        cy={-handle[1]}
+        r={6 * px}
+      >
+        <title>Drag to turn</title>
+      </circle>
+    </g>
+  );
+}
+
+function PlacementGhost({ placing, point, px }: { placing: Placement; point: Point2; px: number }) {
+  const position = snapToGrid(point, THING_GRID_STEP);
+  if (placing.kind === 'fixture') {
+    const corners = fixtureCorners({ position, size: placing.preset.size, rotation: 0 });
+    return <polygon className="ghost" points={corners.map(([x, y]) => `${x},${-y}`).join(' ')} />;
+  }
+  return <circle className="ghost" cx={position[0]} cy={-position[1]} r={7 * px} />;
+}
+
+function findThing(layout: HomeLayout, item: Thing): Fixture | Device | undefined {
+  return item.kind === 'fixture'
+    ? layout.fixtures.find((fixture) => fixture.id === item.id)
+    : layout.devices.find((device) => device.id === item.id);
 }
 
 function OpeningPreview({
@@ -556,7 +876,7 @@ function Grid({ viewBox, scale }: { viewBox: number[]; scale: number }) {
 function hintFor(tool: Tool, draftLength: number): string {
   switch (tool) {
     case 'select':
-      return 'Click a room or opening to edit it. Drag to move a room or its corners. Drag the background to pan, scroll to zoom.';
+      return 'Click anything to edit it. Drag to move rooms, corners, furniture and devices, and the round handle to turn them. Drag the background to pan, scroll to zoom.';
     case 'room':
       return draftLength === 0
         ? 'Click to place the first corner. Corners snap to a 10 cm grid and to other rooms.'

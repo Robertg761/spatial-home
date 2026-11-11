@@ -1,7 +1,7 @@
 import { createEmptyLayout, serializeLayout, type HomeLayout } from '@spatial-home/home-model';
-import { missingFloors, uniqueIds } from './plan.ts';
+import { missingFloors, uniqueIds, type ItemKind } from './plan.ts';
 
-export type Selection = { kind: 'room' | 'opening'; id: string } | null;
+export type Selection = { kind: ItemKind; id: string } | null;
 
 export interface EditorState {
   layout: HomeLayout;
@@ -141,10 +141,7 @@ function pushHistory(past: HomeLayout[], layout: HomeLayout): HomeLayout[] {
 function withSelection(state: EditorState, selection: Selection): EditorState {
   const { layout } = state;
   const exists =
-    selection === null ||
-    (selection.kind === 'room'
-      ? layout.rooms.some((room) => room.id === selection.id)
-      : layout.openings.some((opening) => opening.id === selection.id));
+    selection === null || itemsOf(layout, selection.kind).some((item) => item.id === selection.id);
   const kept = exists ? selection : null;
   const floorId =
     selectionFloor(layout, kept) ??
@@ -163,11 +160,35 @@ function firstFloor(layout: HomeLayout): string {
   return layout.floors[0]?.id ?? missingFloors(layout)[0] ?? '';
 }
 
+function itemsOf(layout: HomeLayout, kind: ItemKind): readonly { id: string }[] {
+  switch (kind) {
+    case 'room':
+      return layout.rooms;
+    case 'opening':
+      return layout.openings;
+    case 'fixture':
+      return layout.fixtures;
+    case 'device':
+      return layout.devices;
+  }
+}
+
+/** The room an item is in, or is, for finding the floor it's on. */
+export function roomOf(layout: HomeLayout, selection: NonNullable<Selection>): string | undefined {
+  switch (selection.kind) {
+    case 'room':
+      return selection.id;
+    case 'opening':
+      return layout.openings.find((opening) => opening.id === selection.id)?.wall.roomId;
+    case 'fixture':
+      return layout.fixtures.find((fixture) => fixture.id === selection.id)?.roomId;
+    case 'device':
+      return layout.devices.find((device) => device.id === selection.id)?.roomId;
+  }
+}
+
 function selectionFloor(layout: HomeLayout, selection: Selection): string | undefined {
   if (!selection) return undefined;
-  const roomId =
-    selection.kind === 'room'
-      ? selection.id
-      : layout.openings.find((opening) => opening.id === selection.id)?.wall.roomId;
+  const roomId = roomOf(layout, selection);
   return layout.rooms.find((room) => room.id === roomId)?.floorId;
 }

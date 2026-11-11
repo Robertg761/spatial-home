@@ -7,6 +7,8 @@ import {
 } from '@spatial-home/home-model';
 import sample from '@spatial-home/home-model/examples/sample-flat.json';
 import {
+  Suspense,
+  lazy,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -33,6 +35,13 @@ import {
   unreadableDraft,
 } from './editor/storage.ts';
 
+// three.js is large, so the 3D view loads the first time it's opened.
+const ModelView = lazy(() =>
+  import('./components/ModelView.tsx').then((module) => ({ default: module.ModelView }))
+);
+
+type ViewKind = 'plan' | '3d';
+
 const TOOLS: { tool: Tool; label: string; key: string }[] = [
   { tool: 'select', label: 'Select', key: 'V' },
   { tool: 'room', label: 'Room', key: 'R' },
@@ -49,6 +58,7 @@ export function App() {
   // Why the draft kept in this browser couldn't be opened, until the notice is dismissed.
   const [unreadable, setUnreadable] = useState(restored.problem ?? '');
   const [tool, setTool] = useState<Tool>('select');
+  const [view, setView] = useState<ViewKind>('plan');
   const [message, setMessage] = useState('');
   const [fitRequest, setFitRequest] = useState(0);
   const [drawing, setDrawing] = useState(false);
@@ -193,6 +203,8 @@ export function App() {
         return;
       } else if (event.key === 'Escape' && placing) {
         setPlacing(null);
+      } else if (event.key === '3') {
+        setView((current) => (current === 'plan' ? '3d' : 'plan'));
       } else if (
         (event.key === 'Delete' || event.key === 'Backspace') &&
         tool === 'select' &&
@@ -202,7 +214,7 @@ export function App() {
         dispatch({ type: 'edit', layout: deleteItem(state.layout, state.selection), select: null });
       } else if (event.key === 'Escape' && tool === 'select') {
         dispatch({ type: 'select', selection: null });
-      } else {
+      } else if (view === 'plan') {
         const match = TOOLS.find((entry) => entry.key === event.key.toUpperCase());
         if (match) chooseTool(match.tool);
         else if (event.key === 'Escape') setTool('select');
@@ -210,15 +222,19 @@ export function App() {
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [state.layout, state.selection, tool, placing]);
+  }, [state.layout, state.selection, tool, placing, view]);
 
   const chooseTool = (next: Tool) => {
     setTool(next);
     setPlacing(null);
   };
+  // Things are placed on the plan, so picking one shows it.
   const pick = (placement: Placement | null) => {
     setPlacing(placement);
-    if (placement) setTool('select');
+    if (placement) {
+      setTool('select');
+      setView('plan');
+    }
   };
 
   // Reading a file takes a moment, so ask about replacing the layout once it has been read, as it
@@ -314,10 +330,30 @@ export function App() {
           <button
             type="button"
             onClick={() => setFitRequest((n) => n + 1)}
-            title="Fit the plan to the window"
+            title="Fit the home to the window"
           >
             Fit
           </button>
+          <span className="divider" />
+          <div className="view-switch" role="group" aria-label="View">
+            {(
+              [
+                ['plan', 'Plan'],
+                ['3d', '3D'],
+              ] as const
+            ).map(([kind, label]) => (
+              <button
+                key={kind}
+                type="button"
+                className={view === kind ? 'active' : ''}
+                aria-pressed={view === kind}
+                onClick={() => setView(kind)}
+                title={`${label} view (3)`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
         </div>
         <input
           ref={fileInput}
@@ -337,10 +373,11 @@ export function App() {
           <button
             key={entry}
             type="button"
-            className={tool === entry && !placing ? 'active' : ''}
-            aria-pressed={tool === entry && !placing}
+            className={tool === entry && view === 'plan' && !placing ? 'active' : ''}
+            aria-pressed={tool === entry && view === 'plan' && !placing}
+            disabled={view !== 'plan'}
             onClick={() => chooseTool(entry)}
-            title={`${label} (${key})`}
+            title={view === 'plan' ? `${label} (${key})` : 'Switch to the plan to draw'}
           >
             {label}
             <kbd>{key}</kbd>
@@ -368,17 +405,23 @@ export function App() {
       />
 
       <main className="canvas">
-        <PlanView
-          state={state}
-          dispatch={dispatch}
-          tool={tool}
-          flagged={flagged}
-          onMessage={setMessage}
-          fitRequest={fitRequest}
-          onDrawing={setDrawing}
-          placing={placing}
-          onPlace={place}
-        />
+        {view === 'plan' ? (
+          <PlanView
+            state={state}
+            dispatch={dispatch}
+            tool={tool}
+            flagged={flagged}
+            onMessage={setMessage}
+            fitRequest={fitRequest}
+            onDrawing={setDrawing}
+            placing={placing}
+            onPlace={place}
+          />
+        ) : (
+          <Suspense fallback={<div className="empty-state">Loading the 3D view…</div>}>
+            <ModelView state={state} dispatch={dispatch} fitRequest={fitRequest} />
+          </Suspense>
+        )}
         {message && (
           <div className="toast" role="status">
             {message}
@@ -404,11 +447,18 @@ export function App() {
             </button>
           </div>
         )}
-        {isEmpty && tool === 'select' && !placing && (
+        {isEmpty && view === 'plan' && tool === 'select' && !placing && (
           <div className="empty-state">
             <p>
               Draw your first room with the Room tool (R), or open the sample flat to see how a
               layout looks.
+            </p>
+          </div>
+        )}
+        {isEmpty && view === '3d' && (
+          <div className="empty-state">
+            <p>
+              There's nothing to see in 3D yet. Draw a room on the plan, or open the sample flat.
             </p>
           </div>
         )}

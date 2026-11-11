@@ -13,6 +13,9 @@
   --door: #c2410c;
   --window: #0284c7;
   --passage: #7c3aed;
+  --wall: #e3e7ed;
+  --fixture: #c7b9a6;
+  --device: #16a34a;
   --error: #dc2626;
   --warning: #d97706;
   color-scheme: light dark;
@@ -42,6 +45,9 @@
     --door: #fb923c;
     --window: #38bdf8;
     --passage: #a78bfa;
+    --wall: #556070;
+    --fixture: #8a7b68;
+    --device: #4ade80;
     --error: #f87171;
     --warning: #fbbf24;
   }
@@ -156,7 +162,8 @@ kbd {
 }
 
 .plan,
-.plan svg {
+.plan svg,
+.model {
   width: 100%;
   height: 100%;
   display: block;
@@ -327,6 +334,48 @@ kbd {
 .cursor {
   fill: var(--accent);
   pointer-events: none;
+}
+
+.model {
+  position: relative;
+  touch-action: none;
+}
+
+.model canvas {
+  display: block;
+}
+
+.model-unavailable {
+  position: absolute;
+  top: 40%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  max-width: 360px;
+  text-align: center;
+  color: var(--muted);
+}
+
+.view-switch {
+  display: flex;
+}
+
+.view-switch button {
+  border-radius: 0;
+}
+
+.view-switch button:first-child {
+  border-radius: 6px 0 0 6px;
+}
+
+.view-switch button:last-child {
+  border-radius: 0 6px 6px 0;
+  margin-left: -1px;
+}
+
+.view-switch button.active {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  position: relative;
 }
 
 .plan-hint,

@@ -15,11 +15,13 @@
     "@spatial-home/ha-client": "*",
     "@spatial-home/home-model": "*",
     "react": "19.2.3",
-    "react-dom": "19.2.3"
+    "react-dom": "19.2.3",
+    "three": "^0.186.1"
   },
   "devDependencies": {
     "@types/react": "~19.2.2",
     "@types/react-dom": "~19.2.2",
+    "@types/three": "^0.186.0",
     "@vitejs/plugin-react": "^6.0.0",
     "typescript": "~6.0.3",
     "vite": "^8.0.0"

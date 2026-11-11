@@ -10,6 +10,12 @@ export const NUMBER_LIMITS = {
   width: { min: 0.1, max: 20 },
   height: { min: 0.1, max: 10 },
   sillHeight: { min: 0, max: 10 },
+  fixtureSize: { min: 0.05, max: 20 },
+  rotation: { min: 0, max: 360 },
+  deviceHeight: { min: 0, max: 20 },
+  tilt: { min: -90, max: 90 },
+  range: { min: 0.1, max: 50 },
+  fieldOfView: { min: 1, max: 360 },
 } as const;
 
 /**

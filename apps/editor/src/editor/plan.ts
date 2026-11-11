@@ -399,16 +399,22 @@ function fitOffset(offset: number, width: number, length: number): number {
   return max < min ? length / 2 : clamp(offset, min, max);
 }
 
+/** The kinds of item the editor can select, and delete. */
+export type ItemKind = 'room' | 'opening' | 'fixture' | 'device';
+
 /**
- * Deletes a room or an opening. A room takes its openings with it, including doors in other rooms'
- * walls that led into it, along with the fixtures and devices placed in it.
+ * Deletes an item. A room takes its openings with it, including doors in other rooms' walls that
+ * led into it, along with the fixtures and devices placed in it.
  */
-export function deleteItem(
-  layout: HomeLayout,
-  item: { kind: 'room' | 'opening'; id: string }
-): HomeLayout {
+export function deleteItem(layout: HomeLayout, item: { kind: ItemKind; id: string }): HomeLayout {
   if (item.kind === 'opening') {
     return { ...layout, openings: layout.openings.filter((opening) => opening.id !== item.id) };
+  }
+  if (item.kind === 'fixture') {
+    return { ...layout, fixtures: layout.fixtures.filter((fixture) => fixture.id !== item.id) };
+  }
+  if (item.kind === 'device') {
+    return { ...layout, devices: layout.devices.filter((device) => device.id !== item.id) };
   }
   return {
     ...layout,
@@ -507,7 +513,7 @@ function nextRoomName(layout: HomeLayout): string {
   }
 }
 
-function slug(name: string): string {
+export function slug(name: string): string {
   return name
     .toLowerCase()
     .normalize('NFKD')
@@ -527,7 +533,7 @@ function clamp(value: number, min: number, max: number): number {
 }
 
 /** Rounds away floating-point noise, so 0.1 + 0.2 is stored as 0.3. */
-function roundTo(value: number, step = 1e-6): number {
+export function roundTo(value: number, step = 1e-6): number {
   const rounded = Math.round(value / step) * step;
   return Number(rounded.toFixed(6)) + 0;
 }
